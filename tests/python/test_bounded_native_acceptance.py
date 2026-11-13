@@ -441,6 +441,128 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertEqual(current.to_table(full_text_query={'query': 'pair3', 'columns': ['content']})['id'].to_pylist(), [20003])
             self.assertEqual(current.to_table(filter="path = '/pair/3.ts'")['id'].to_pylist(), [20003])
 
+    @staticmethod
+    def small_fragments(home):
+        """A store shaped like a live one after months of edits: many 5-row
+        fragments, each with 1 deleted row, both search indexes in segments
+        that name fragments relocation drained, and fragments no segment
+        covers yet."""
+        import lance
+        import pyarrow as pa
+        from datetime import timedelta
+        from lance.fragment import write_fragments
+        root = Path(home) / 'store' / 'chunks.lance'
+        root.parent.mkdir()
+        ds = fixture_support.BoundedCleanupAcceptance.fixture(root, deleted=False)
+        ds.merge(pa.table({'id': pa.array(range(2048), type=pa.int32()),
+                           'path': [f'/fixture/β/{i}.ts' for i in range(2048)]}),
+                 left_on='id')
+        ds.create_scalar_index('path', 'BTREE', name='path_idx')
+        ds = lance.dataset(str(root))
+        seed, schema =ds.to_table(filter='id = 11').to_pylist()[0], ds.schema
+
+        def append(start, count):
+            known = {f.fragment_id for f in lance.dataset(str(root)).get_fragments()}
+            rows = [{**seed, 'id': 30000 + n, 'path': f'/small/{n}.ts', 'content': f'needle small{n} lexical'}
+                    for n in range(start, start + count)]
+            ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema), str(root),
+                                     mode='append', max_rows_per_file=5)
+            return ds, sorted(f.fragment_id for f in ds.get_fragments() if f.fragment_id not in known)
+
+        ds, small = append(0, 600)
+        assert len(small) == 120, len(small)
+        groups = [small[k:k + 8] for k in range(0, 120, 8)]
+        for name, field, kind in (('content_idx', 'content', 'INVERTED'), ('path_idx', 'path', 'BTREE')):
+            built = [ds.create_index_uncommitted(field, kind, name=name, replace=True, fragment_ids=group)
+                     for group in groups]
+            ds = ds.commit_existing_index_segments(name, field, built)
+        # Relocation's own commit before it merged: the rows written anew in a
+        # fragment no segment covers, the source removed and still named.
+        drained = small[::12]
+        for fragment in drained:
+            ds = lance.dataset(str(root))
+            moved = write_fragments(ds.get_fragment(fragment).to_table(), str(root), schema=ds.schema)
+            lance.LanceDataset.commit(str(root), lance.LanceOperation.Update(
+                removed_fragment_ids=[fragment], new_fragments=moved), read_version=ds.version)
+        append(600, 60)
+        lance.dataset(str(root)).delete('id >= 30000 AND id % 5 = 1')
+        ds = lance.dataset(str(root))
+        ds.cleanup_old_versions(older_than=timedelta(0), delete_unverified=True,
+                                error_if_tagged_old_versions=False)
+        ds = lance.dataset(str(root))
+        assert len(ds.get_fragments()) == 16 + 120 + 12
+        assert sum(f.num_deletions for f in ds.get_fragments()) == 132
+        for name in ('content_idx', 'path_idx'):
+            segments = [index for index in ds.list_indices() if index['name'] == name]
+            assert len(segments) == 16, (name, len(segments))
+            assert sum(bool(set(index['fragment_ids']) & set(drained)) for index in segments) == 10, name
+        return root
+
+    def test_relocation_merges_small_fragments_and_reclaims_their_deleted_rows(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-small-merge-') as home:
+            root = self.small_fragments(home)
+            # Rows of drained, indexed, uncovered and base fragments, and
+            # deleted rows among them.
+            probes = [0, 1, 2, 12, 13, 60, 61, 599, 600, 601, 655, 659]
+
+            def searches(ds):
+                return ([ds.to_table(full_text_query={'query': f'small{n}', 'columns': ['content']})['id'].to_pylist()
+                         for n in probes],
+                        [ds.to_table(filter=f"path = '/small/{n}.ts'")['id'].to_pylist() for n in probes],
+                        sorted(ds.to_table(full_text_query={'query': 'needle', 'columns': ['content']})['id'].to_pylist()),
+                        ds.to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(),
+                        ds.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist())
+
+            def covered(ds, name):
+                return {f for index in ds.list_indices() if index['name'] == name
+                        for f in index['fragment_ids']}
+
+            def attempt(operation):
+                session = NativeSession(self.binary, root, cap=512 * 1024**2, qualification={
+                    'operation': operation, 'sourceLimitBytes': 512 * 1024**2,
+                    'deferredOperations': ['cleanup', 'orphan-reclamation']})
+                try:
+                    result = session.reach('result')
+                    self.assertFalse(result['recoveryPending'])
+                    return result
+                finally:
+                    session.close()
+
+            ds = lance.dataset(str(root))
+            digest = fixture_support.row_digest(ds)
+            before = searches(ds)
+            self.assertEqual(before[0], [[] if n % 5 == 1 else [30000 + n] for n in probes])
+            self.assertEqual(before[1], before[0])
+            rows = ds.count_rows()
+            fragments = [len(ds.get_fragments())]
+            for _ in range(80):
+                result = attempt('repair')
+                if result['status'] == 'no-work':
+                    break
+                if result['operation'] == 'row-relocation':
+                    count = len(lance.dataset(str(root)).get_fragments())
+                    self.assertLess(count, fragments[-1], f'relocation left {count} fragments')
+                    self.assertEqual(result['remainingFragments'], count)
+                    fragments.append(count)
+            self.assertEqual(result['status'], 'no-work')
+            print(json.dumps({'smallFragmentMerge': {'fragmentsAfterEachRelocation': fragments}}))
+            # 132 small fragments go 64 at a time, then the base fragments join.
+            self.assertGreaterEqual(len(fragments), 3)
+            self.assertLessEqual(fragments[-1], 4)
+            current = lance.dataset(str(root))
+            self.assertEqual(sum(f.num_deletions for f in current.get_fragments()), 0)
+            self.assertEqual(current.count_rows(), rows)
+            for _ in range(20):
+                if attempt('repair-indexes')['status'] == 'no-work':
+                    break
+            current = lance.dataset(str(root))
+            live = {f.fragment_id for f in current.get_fragments()}
+            for name in ('content_idx', 'path_idx'):
+                self.assertLessEqual(live, covered(current, name), name)
+            self.assertEqual(fixture_support.row_digest(current), digest)
+            self.assertEqual(searches(current), before)
+
     def test_index_refresh_runs_past_the_whole_manifest_scan_bound(self):
         import lance
         import pyarrow as pa

@@ -23,6 +23,7 @@ CASES = [
     'test_index_merge_commits_after_its_source_versions_are_pruned',
     'test_relocation_at_the_segment_bound_refuses_before_writing_and_merges_first',
     'test_index_merge_takes_segments_that_name_drained_fragments',
+    'test_relocation_merges_small_fragments_and_reclaims_their_deleted_rows',
 ] + ['fixture_case_' + str(i) for i in range(9)]
 
 
@@ -58,12 +59,13 @@ class BoundedArtifactPackaging(unittest.TestCase):
             self.write(directory / 'acceptance.json', proof)
             fault = dict(proof)
             fault['verdict'] = 'PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE'
-            fault['tests'] = {'executed': 4, 'passed': 4, 'skipped': 0,
+            fault['tests'] = {'executed': 5, 'passed': 5, 'skipped': 0,
                               'failures': 0, 'errors': 0}
             fault['testCases'] = [
                 'test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund',
                 'test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization',
                 'test_relocation_interruptions_preserve_each_valid_intermediate_head',
+                'test_wide_row_merge_interrupted_before_its_index_commits_recovers_to_covered',
                 'test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff']
             self.write(directory / 'fault-acceptance.json', fault)
 

@@ -97,6 +97,78 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                 self.assertEqual(core.fixture_support.row_digest(lance.dataset(str(root))), baseline)
                 self.assertEqual(lance.dataset(str(root)).to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
 
+    def test_wide_row_merge_interrupted_before_its_index_commits_recovers_to_covered(self):
+        import lance
+        import pyarrow as pa
+        import random
+        cap = 512 * 1024**2
+        options = {'sourceLimitBytes': cap, 'deferredOperations': ['cleanup', 'orphan-reclamation']}
+        reads = {}
+        for phase in ('after-data-commit', 'after-path-commit', 'after-content-commit'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix='gmax-native-merge-fault-') as home:
+                root = Path(home) / 'store' / 'chunks.lance'
+                root.parent.mkdir()
+                rng = random.Random(43)
+                schema = pa.schema([('id', pa.string()), ('path', pa.string()), ('content', pa.string()),
+                                    ('vector', pa.list_(pa.float32(), 8)), ('colbert', pa.binary()),
+                                    ('file_skeleton', pa.string())])
+                # 20 fragments of 60 wide rows, each with 1 deleted row: the
+                # merge takes as many whole as its 12 MiB plan allows.
+                rows = [{'id': f'w{n}', 'path': f'/wide/{n // 7}.ts', 'content': f'wide unique{n}',
+                         'vector': [float(n % 11)] * 8, 'colbert': rng.randbytes(12000),
+                         'file_skeleton': rng.randbytes(2500).hex()} for n in range(1200)]
+                ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema), str(root),
+                                         max_rows_per_file=60, max_rows_per_group=64)
+                del rows
+                ds.create_scalar_index('path', 'BTREE', name='path_idx')
+                ds.create_scalar_index('content', 'INVERTED', name='content_idx')
+                ds.delete("id IN ({})".format(','.join(f"'w{60 * k + 7}'" for k in range(20))))
+                baseline = core.fixture_support.row_digest(lance.dataset(str(root)))
+                session = core.NativeSession(self.binary, root, cap=cap, qualification={
+                    **options, 'operation': 'repair-relocate', 'qualificationPauseAt': phase})
+                try:
+                    session.reach('qualification-' + phase)
+                    receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                finally:
+                    session.close()
+                sources = receipt['repair']['fragments']
+                self.assertGreaterEqual(len(sources), 10)
+                session = core.NativeSession(self.binary, root, cap=cap, action='recover', qualification=options)
+                try:
+                    result = session.reach('result')
+                finally:
+                    session.close()
+                self.assertFalse(result['recoveryPending'])
+                self.assertEqual(result['receiptId'], receipt['receiptId'])
+                self.assertGreater(result['dataBytesWritten'], 10 * 1024**2)
+                reads[phase] = result['sourceBytesRead']
+                self.assertLessEqual(result['sourceBytesRead'], 192 * 1024**2)
+                current = lance.dataset(str(root))
+                self.assertFalse({f.fragment_id for f in current.get_fragments()} & set(sources))
+                # Index repair takes at most 8 MiB of source, so an output
+                # left uncovered is moved again by a relocation that indexes it.
+                for _ in range(20):
+                    session = core.NativeSession(self.binary, root, cap=cap,
+                                                 qualification={**options, 'operation': 'repair'})
+                    try:
+                        result = session.reach('result')
+                        self.assertFalse(result['recoveryPending'])
+                    finally:
+                        session.close()
+                    if result['status'] == 'no-work':
+                        break
+                self.assertEqual(result['status'], 'no-work')
+                current = lance.dataset(str(root))
+                live = {f.fragment_id for f in current.get_fragments()}
+                for name in ('content_idx', 'path_idx'):
+                    self.assertLessEqual(live, {f for index in current.list_indices() if index['name'] == name
+                                                for f in index['fragment_ids']}, name)
+                self.assertEqual(core.fixture_support.row_digest(current), baseline)
+                self.assertEqual(current.to_table(full_text_query={'query': 'unique8', 'columns': ['content']})['id'].to_pylist(), ['w8'])
+                self.assertEqual(current.to_table(full_text_query={'query': 'unique7', 'columns': ['content']})['id'].to_pylist(), [])
+                self.assertEqual(current.to_table(filter="path = '/wide/1.ts'").num_rows, 6)
+        print(json.dumps({'nativeFaultAcceptance': 'wide-merge-recovery', 'sourceBytesRead': reads}))
+
     def test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund(self):
         import lance
         import pyarrow as pa
@@ -285,7 +357,7 @@ if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2, resultclass=TrackingResult).run(suite)
     unchanged = (binary_sha256 is not None and binary_digest(binary) == binary_sha256
                  and source_digest() == source)
-    passed = result.wasSuccessful() and result.testsRun == 4 and not result.skipped and unchanged
+    passed = result.wasSuccessful() and result.testsRun == 5 and not result.skipped and unchanged
     evidence = {'schemaVersion': 1,
                 'verdict': 'PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE' if passed else 'FAIL_BOUNDED_NATIVE_FAULT_ACCEPTANCE',
                 'binarySha256': binary_sha256, 'sourceDigest': source,
@@ -299,7 +371,8 @@ if __name__ == '__main__':
                           'unchanged failure head; later watched edits preserved during owned orphan reclamation',
                           'durable proven-abort recovery keeps original charged bytes without refund',
                           'next attempt admission and bounded custom journal/log retention',
-                          'SIGKILL after first owned-tag deletion; same-ledger finalization recovery'],
+                          'SIGKILL after first owned-tag deletion; same-ledger finalization recovery',
+                          'wide-row merge killed after its data or index commits; recovery reads and full index coverage'],
                 'limits': ['qualification binary is not a production artifact',
                            'does not establish physical ENOSPC behavior',
                            'no production store/process touched']}
