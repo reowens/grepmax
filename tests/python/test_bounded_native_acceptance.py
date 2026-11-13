@@ -190,12 +190,20 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 self.assertEqual(current.to_table(filter=f"path = '/merge/{n}.ts'")['id'].to_pylist(), [9000 + n])
             self.assertTrue(merged, 'small segments must merge rather than accumulate indefinitely')
             # Physical segments cover different cohorts of the same logical
-            # index. Their union must not manufacture relocation backlog.
+            # index. Their union is full coverage: relocation only merges the
+            # small fragments, and every current fragment stays covered.
+            digest = fixture_support.row_digest(current)
             session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
             try:
-                self.assertEqual(session.reach('result')['status'], 'no-work')
+                self.assertEqual(session.reach('result')['operation'], 'row-relocation')
             finally:
                 session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(fixture_support.row_digest(current), digest)
+            for name in ('content_idx', 'path_idx'):
+                covered = {f for index in current.list_indices() if index['name'] == name
+                           for f in index['fragment_ids']}
+                self.assertLessEqual({f.fragment_id for f in current.get_fragments()}, covered, name)
 
     @staticmethod
     def segmented(home, segments):
@@ -344,7 +352,9 @@ class BoundedNativeAcceptance(unittest.TestCase):
             lance.LanceDataset.commit(str(root), lance.LanceOperation.Update(
                 removed_fragment_ids=[pairs[2 * k]], new_fragments=moved), read_version=ds.version)
         lance.dataset(str(root)).delete('id = 20248')
-        session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+        # One source, as relocation took before it merged small fragments.
+        session = NativeSession(self.binary, root, selected=[pairs[124]],
+                                qualification={'operation': 'repair-relocate'})
         try:
             self.assertEqual(session.reach('result')['operation'], 'row-relocation')
         finally:
@@ -459,17 +469,30 @@ class BoundedNativeAcceptance(unittest.TestCase):
             current = lance.dataset(str(root))
             self.assertEqual(fixture_support.row_digest(current), digest)
             self.assertEqual(current.to_table(full_text_query={'query': 'many0', 'columns': ['content']})['id'].to_pylist(), [10000])
-            # Orphan and relocation planning read every fragment and keep the bound.
-            for operation in ('repair-relocate', 'repair-orphans'):
-                before = fixture_support.file_state(root)
-                session = NativeSession(self.binary, root, qualification={'operation': operation})
-                try:
-                    self.drive_to_exit(session)
-                    self.assertNotEqual(session.process.returncode, 0)
-                    self.assertIn('too many fragments', self.failure_reason(session).lower())
-                    self.assertEqual(fixture_support.file_state(root), before)
-                finally:
-                    session.close()
+            # Orphan planning reads every fragment and keeps the bound.
+            before = fixture_support.file_state(root)
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-orphans'})
+            try:
+                self.drive_to_exit(session)
+                self.assertNotEqual(session.process.returncode, 0)
+                self.assertIn('too many fragments', self.failure_reason(session).lower())
+                self.assertEqual(fixture_support.file_state(root), before)
+            finally:
+                session.close()
+            # The merge orders on manifest row counts, so it runs past the
+            # bound and brings the store back toward it.
+            fragments = len(current.get_fragments())
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'row-relocation')
+                self.assertEqual(result['remainingFragments'], fragments - 63)
+            finally:
+                session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(len(current.get_fragments()), fragments - 63)
+            self.assertEqual(fixture_support.row_digest(current), digest)
+            self.assertEqual(current.to_table(filter="path = '/many/7.ts'")['id'].to_pylist(), [10007])
 
     def test_partial_relocation_preserves_values_and_protected_reader(self):
         import lance
@@ -477,11 +500,15 @@ class BoundedNativeAcceptance(unittest.TestCase):
             root, ds = self.prepare(home)
             before = fixture_support.row_digest(ds)
             reader = lance.dataset(str(root), version=ds.version)
+            fragments = len(ds.get_fragments())
             session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
             try:
                 result = session.reach('result')
                 self.assertEqual(result['operation'], 'row-relocation')
-                self.assertEqual(result['rowsVerified'], 64)
+                # 16 small fragments: the one with deletions and 7 whole others
+                # fit 1,024 rows, merged into 1.
+                self.assertEqual(result['rowsVerified'], 64 + 7 * 128)
+                self.assertEqual(result['remainingFragments'], fragments - 7)
                 self.assertGreater(result['dataBytesWritten'], 0)
                 self.assertLessEqual(result['sourceBytesRead'], 32 * 1024**2)
                 self.assertFalse(result['recoveryPending'])
@@ -528,10 +555,13 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 result = session.reach('result')
                 self.assertEqual(result['operation'], 'row-relocation')
                 # Rows are measured as the digest measures them, so the chosen
-                # batch fills the 2 MiB payload and passes its own bound.
-                self.assertGreaterEqual(result['rowsVerified'], 64)
-                self.assertLessEqual(result['sourceBytesRead'], 16 * 1024**2)
-                self.assertLess(result['sourceBytesRead'], source_bytes // 2)
+                # batch fills the 16 MiB payload and passes its own bound. The
+                # fragment is too large to take whole: it is drained in part,
+                # reading about what moves, not the whole file.
+                self.assertGreaterEqual(result['rowsVerified'], 900)
+                self.assertLess(result['rowsVerified'], 1198)
+                self.assertLessEqual(result['sourceBytesRead'], 5 * result['dataBytesWritten'])
+                self.assertLessEqual(result['sourceBytesRead'], 128 * 1024**2)
                 self.assertFalse(result['recoveryPending'])
             finally:
                 session.close()

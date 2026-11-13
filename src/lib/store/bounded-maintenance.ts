@@ -12,6 +12,8 @@ import { type StoreLease, storeLeasePaths } from "./store-lease";
 
 export const MAX_BOUNDED_TOTAL_WRITE_BYTES = 512 * 1024 ** 2;
 export const BOUNDED_FREE_SPACE_MARGIN_BYTES = 1024 ** 3;
+/** The native recovery read allowance of a row relocation, its largest. */
+const MAX_SOURCE_BYTES_READ = 192 * 1024 ** 2;
 export const BOUNDED_MAINTENANCE_BLOCKED_REASON =
   "deleted-row cleanup deferred: a qualified native helper enforcing total data, search-index and temporary writes is unavailable; automatic version cleanup remains enabled";
 
@@ -367,6 +369,7 @@ export interface BoundedMaintenanceResult extends CompactionResult {
   sourceBytesRead?: number;
   remainingIndexFragments?: number;
   remainingIndexRows?: number;
+  remainingFragments?: number;
   orphansReclaimed?: number;
   inventoryComplete?: boolean;
   inventoryVersionsRemaining?: number;
@@ -730,7 +733,7 @@ export async function runBoundedMaintenance(
                 phase.operation !== plan.operation) ||
               (phase.sourceBytesRead !== undefined &&
                 (!bytes(phase.sourceBytesRead) ||
-                  phase.sourceBytesRead > 32 * 1024 ** 2)) ||
+                  phase.sourceBytesRead > MAX_SOURCE_BYTES_READ)) ||
               !bytes(phase.rowsVerified) ||
               !bytes(phase.remainingDeletedRows) ||
               (phase.recoveryPending !== undefined &&
@@ -826,6 +829,9 @@ export async function runBoundedMaintenance(
                 : {}),
               ...(bytes(phase.remainingIndexRows)
                 ? { remainingIndexRows: phase.remainingIndexRows }
+                : {}),
+              ...(bytes(phase.remainingFragments)
+                ? { remainingFragments: phase.remainingFragments }
                 : {}),
               ...(bytes(phase.orphansReclaimed)
                 ? { orphansReclaimed: phase.orphansReclaimed }

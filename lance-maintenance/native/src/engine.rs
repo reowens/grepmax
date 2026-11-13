@@ -1062,8 +1062,13 @@ pub async fn run(request: Request) -> Result<()> {
                     && ledger.counts().index_bytes_written == 0,
             "Lost source journal"
         );
+        let cap = if old.repair.as_ref().is_some_and(|p| p.relocation.is_some()) {
+            crate::relocation::RECOVERY_READS
+        } else {
+            32 * 1024 * 1024
+        };
         Some(Arc::new(SourceReads::journal(
-            32 * 1024 * 1024,
+            cap,
             &file,
             ledger,
             restore,
@@ -1314,7 +1319,7 @@ pub async fn run(request: Request) -> Result<()> {
             emit(
                 json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
                 "planId":sha(b"no-work"),"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,"rowsVerified":0,
-                "recoveryPending":false,"remainingDeletedRows":remaining,"remainingIndexFragments":index_fragments,"remainingIndexRows":index_rows,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
+                "recoveryPending":false,"remainingDeletedRows":remaining,"remainingFragments":dataset.manifest.fragments.len(),"remainingIndexFragments":index_fragments,"remainingIndexRows":index_rows,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
             )?;
             return Ok(());
         }
@@ -1649,8 +1654,13 @@ pub async fn run(request: Request) -> Result<()> {
         }
     };
     if request.action == "run" && receipt.repair.is_some() {
+        let cap = if receipt.repair.as_ref().is_some_and(|p| p.relocation.is_some()) {
+            crate::relocation::READS
+        } else {
+            16 * 1024 * 1024
+        };
         reads = Some(Arc::new(SourceReads::journal(
-            16 * 1024 * 1024,
+            cap,
             &root.join(format!("_gmax-reads-{}.journal", receipt.receipt_id)),
             ledger.clone(),
             false,
@@ -1823,6 +1833,7 @@ pub async fn run(request: Request) -> Result<()> {
         result["recoveryPending"] = json!(cleanup_pending);
         if let Some(reason) = &cleanup_failure { result["recoveryBlockReason"] = json!(reason); }
         result["remainingDeletedRows"] = json!(dataset.count_deleted_rows().await?);
+        result["remainingFragments"] = json!(dataset.manifest.fragments.len());
         let (fragments, rows) = crate::repair::backlog(&dataset).await?;
         result["remainingIndexFragments"] = json!(fragments); result["remainingIndexRows"] = json!(rows);
         result["freeBytesBefore"] = json!(free_before); result["freeBytesAfter"] = json!(free_bytes(&root)?);

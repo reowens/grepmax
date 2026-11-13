@@ -1,6 +1,9 @@
-//! Atomic partial row movement: append exact values and delete their original
+//! Atomic row movement: append exact values and delete their original
 //! addresses in one Update. Existing address-based indexes are never remapped.
+//! Small fragments merge whole into one output; a fragment too large to take
+//! whole is drained part by part.
 use crate::engine::{Receipt, Request, all_indices, row_digest, save_receipt, verify_owner};
+use crate::selection::{Source, select_merge};
 use anyhow::{Context, Result, ensure};
 use arrow_array::{RecordBatch, RecordBatchIterator};
 use arrow_row::{RowConverter, SortField};
@@ -26,8 +29,18 @@ use std::{
     sync::Arc,
 };
 
-const PAYLOAD: usize = 2 * 1024 * 1024;
+/// One output fragment, the size `gmax compact` writes. Half of it is what
+/// counts as small, so a store of N bytes settles under 2N/PAYLOAD fragments.
+const PAYLOAD: usize = 16 * 1024 * 1024;
+/// A merge is planned from data-file sizes; the margin keeps a whole-source
+/// merge inside PAYLOAD when rows encode larger than they store.
+const MERGE_PLAN: u64 = (PAYLOAD as u64) * 3 / 4;
 const ROWS: usize = 1024;
+/// Source reads of one attempt, about 3 times its payload when measured, and
+/// of its recovery, which reads the sources and the output again.
+pub(crate) const READS: u64 = 8 * PAYLOAD as u64;
+pub(crate) const RECOVERY_READS: u64 = READS + 4 * PAYLOAD as u64;
+const SOURCES: usize = 64;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Publication {
@@ -46,9 +59,11 @@ pub struct Proof {
     pub publications: Vec<Publication>,
 }
 impl Proof {
-    pub fn valid(&self, source: u64) -> bool {
-        self.addresses.len() <= ROWS
-            && self.addresses.iter().all(|a| *a >> 32 == source)
+    pub fn valid(&self, sources: &[u64]) -> bool {
+        sources.len() <= SOURCES
+            && self.addresses.len() <= ROWS
+            && self.addresses.iter().all(|a| sources.contains(&(*a >> 32)))
+            && self.updated.as_ref().is_none_or(|f| sources.contains(&f.id))
             && self
                 .addresses
                 .iter()
@@ -94,71 +109,103 @@ pub async fn plan(
             }
         }
     }
-    let mut candidates = vec![];
-    for f in dataset.manifest.fragments.iter() {
-        if request
+    let selected = |f: &&Fragment| {
+        request
             .selected_fragment_ids
             .as_ref()
-            .is_some_and(|ids| !ids.contains(&f.id))
-        {
-            continue;
-        }
-        let deleted = f
-            .deletion_file
-            .as_ref()
-            .and_then(|d| d.num_deleted_rows)
-            .unwrap_or(0);
-        let source = f.files.iter().try_fold(0u64, |s, file| {
-            Ok::<_, anyhow::Error>(
-                s.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
-                    .context("Source overflow")?,
-            )
-        })?;
-        let uncovered = coverage
-            .values()
-            .any(|covered| !covered.contains(&(f.id as u32)));
-        // Any deletion is eligible here. It also handles uncovered oversized
-        // fragments that cannot train a bounded scalar segment directly.
-        if deleted > 0
-            || uncovered && source > crate::repair::SOURCE.min(request.source_limit_bytes)
-        {
-            candidates.push((f.id, deleted, source));
-        }
+            .is_none_or(|ids| ids.contains(&f.id))
+    };
+    let source_bytes = |f: &Fragment| {
+        f.files.iter().try_fold(0u64, |s, file| {
+            s.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
+                .context("Source overflow")
+        })
+    };
+    let uncovered = |id: u64| coverage.values().any(|covered| !covered.contains(&(id as u32)));
+    // Uncovered fragments index repair cannot train within its source bound.
+    let oversized = crate::repair::SOURCE.min(request.source_limit_bytes);
+    // The merge orders on manifest row counts and reads file sizes only for
+    // the fragments it may take, so it also runs past the whole-manifest scan
+    // bound and can bring a store back under it.
+    let mut fragments = vec![];
+    for f in dataset.manifest.fragments.iter().filter(selected) {
+        let live = live_rows(f)?;
+        let physical = f.physical_rows.context("Unknown fragment rows")?;
+        fragments.push((live, physical - live, physical, f));
     }
-    candidates.sort_by_key(|(id, deleted, source)| (std::cmp::Reverse(*deleted), *source, *id));
-    if let Some((id, _, _)) = candidates.first() {
-        // The moved rows get a new segment on each index after the data
-        // commit. Without room for it, refuse before writing; the automatic
-        // operation merges segments instead.
-        if segments.values().any(|n| *n >= crate::repair::SEGMENTS) {
-            ensure!(
-                request.operation.as_deref() != Some("repair-relocate"),
-                "Relocation index segment bound"
-            );
-            return Ok(None);
+    fragments.sort_by_key(|(live, deleted, _, f)| (*live, std::cmp::Reverse(*deleted), f.id));
+    let mut sources = vec![];
+    for (live, deleted, physical, f) in fragments.into_iter().take(crate::engine::SCAN_FRAGMENTS) {
+        let bytes = source_bytes(f)?;
+        sources.push(Source {
+            id: f.id,
+            live_rows: live,
+            deleted_rows: deleted,
+            live_bytes: (u128::from(bytes) * live as u128 / physical.max(1) as u128) as u64,
+            uncovered_oversized: uncovered(f.id) && bytes > oversized,
+        });
+    }
+    let mut picked = select_merge(&sources, PAYLOAD as u64 / 2, MERGE_PLAN, ROWS, SOURCES);
+    if picked.is_empty() && crate::engine::scannable(dataset) {
+        // Nothing to merge: drain the fragment with the most deleted rows,
+        // whatever its size, as far as one output allows.
+        let mut candidates = vec![];
+        for f in dataset.manifest.fragments.iter().filter(selected) {
+            let deleted = f
+                .deletion_file
+                .as_ref()
+                .and_then(|d| d.num_deleted_rows)
+                .unwrap_or(0);
+            let source = source_bytes(f)?;
+            if deleted > 0 || uncovered(f.id) && source > oversized {
+                candidates.push((f.id, deleted, source));
+            }
         }
+        candidates.sort_by_key(|(id, deleted, source)| (std::cmp::Reverse(*deleted), *source, *id));
+        picked.extend(candidates.first().map(|(id, _, _)| *id));
+    }
+    if picked.is_empty() {
+        return Ok(None);
+    }
+    // The moved rows get a new segment on each index after the data commit.
+    // Without room for it, refuse before writing; the automatic operation
+    // merges segments instead.
+    if segments.values().any(|n| *n >= crate::repair::SEGMENTS) {
         ensure!(
-            !dataset.manifest.uses_stable_row_ids(),
-            "Partial relocation requires physical row addresses"
+            request.operation.as_deref() != Some("repair-relocate"),
+            "Relocation index segment bound"
         );
-        Ok(Some(crate::repair::Proof {
-            fragments: vec![*id],
-            name: String::new(),
-            field: String::new(),
-            merge: vec![],
-            output: None,
-            orphans: None,
-            relocation: Some(Proof {
-                addresses: vec![],
-                digest: String::new(),
-                updated: None,
-                staged: vec![],
-                publications: vec![],
-            }),
-        }))
-    } else {
-        Ok(None)
+        return Ok(None);
     }
+    ensure!(
+        !dataset.manifest.uses_stable_row_ids(),
+        "Partial relocation requires physical row addresses"
+    );
+    Ok(Some(crate::repair::Proof {
+        fragments: picked,
+        name: String::new(),
+        field: String::new(),
+        merge: vec![],
+        output: None,
+        orphans: None,
+        relocation: Some(Proof {
+            addresses: vec![],
+            digest: String::new(),
+            updated: None,
+            staged: vec![],
+            publications: vec![],
+        }),
+    }))
+}
+fn live_rows(fragment: &Fragment) -> Result<usize> {
+    let deleted = fragment.deletion_file.as_ref().map_or(Ok(0), |d| {
+        d.num_deleted_rows.context("Unknown deleted rows")
+    })?;
+    fragment
+        .physical_rows
+        .context("Unknown fragment rows")?
+        .checked_sub(deleted)
+        .context("Deleted rows exceed physical rows")
 }
 fn row_converter(schema: &Schema) -> Result<RowConverter> {
     Ok(RowConverter::new(
@@ -209,20 +256,28 @@ pub async fn execute(
     receipt: &mut Receipt,
     request: &Request,
 ) -> Result<()> {
-    let source = receipt.selected_fragment_ids[0];
-    let fragment = dataset
-        .get_fragment(source as usize)
-        .context("Relocation source missing")?;
-    // Take live rows by address. A sequential fragment scan schedules whole
-    // column pages, so on wide rows it reads about the whole fragment to return
-    // a few rows and exhausts the source read allowance.
-    let deleted = fragment.get_deletion_vector().await?;
-    let physical = u32::try_from(fragment.physical_rows().await?).context("Fragment row bound")?;
-    let live: Vec<u64> = (0..physical)
-        .filter(|offset| !deleted.as_ref().is_some_and(|d| d.contains(*offset)))
-        .take(ROWS)
-        .map(|offset| (source << 32) | u64::from(offset))
-        .collect();
+    let sources = receipt.repair.as_ref().unwrap().fragments.clone();
+    let mut fragments = vec![];
+    // Take live rows by address, in the planned source order. A sequential
+    // fragment scan schedules whole column pages, so on wide rows it reads
+    // about the whole fragment to return a few rows and exhausts the source
+    // read allowance.
+    let mut live = vec![];
+    for source in &sources {
+        let fragment = dataset
+            .get_fragment(*source as usize)
+            .context("Relocation source missing")?;
+        let deleted = fragment.get_deletion_vector().await?;
+        let physical =
+            u32::try_from(fragment.physical_rows().await?).context("Fragment row bound")?;
+        live.extend(
+            (0..physical)
+                .filter(|offset| !deleted.as_ref().is_some_and(|d| d.contains(*offset)))
+                .take(ROWS - live.len())
+                .map(|offset| (source << 32) | u64::from(offset)),
+        );
+        fragments.push(fragment);
+    }
     let converter = row_converter(&Schema::from(dataset.schema()))?;
     let mut batches = vec![];
     let mut addresses = vec![];
@@ -256,11 +311,13 @@ pub async fn execute(
         step = ((PAYLOAD - payload) / (payload / addresses.len()).max(1)).clamp(1, 64);
     }
     if addresses.is_empty() {
-        // An entirely deleted source needs no copying or retraining.
-        ensure!(
-            fragment.count_rows(None).await? == 0,
-            "Empty relocation selection with live source"
-        );
+        // Entirely deleted sources need no copying or retraining.
+        for fragment in &fragments {
+            ensure!(
+                fragment.count_rows(None).await? == 0,
+                "Empty relocation selection with live source"
+            );
+        }
     }
     let (rows, hash) = if batches.is_empty() {
         (0, crate::hex(Sha256::digest([])))
@@ -296,7 +353,8 @@ pub async fn execute(
                 mode: WriteMode::Append,
                 max_rows_per_group: 64,
                 max_rows_per_file: ROWS,
-                max_bytes_per_file: PAYLOAD,
+                // The payload bound already holds the rows; one output file.
+                max_bytes_per_file: 4 * PAYLOAD,
                 ..Default::default()
             },
         )
@@ -307,28 +365,38 @@ pub async fn execute(
         fragments
     };
     if !staged.is_empty() {
+        ensure!(staged.len() == 1, "Relocation output split");
         let candidate = row_digest(dataset, staged.clone()).await?;
         ensure!(
             candidate.0 == rows && candidate.1 == receipt.source_rows_digest,
             "Uncommitted relocated values differ"
         );
     }
-    let updated = if addresses.is_empty() {
-        None
-    } else {
+    // A source whose live rows all moved is removed; only the source where the
+    // payload ran out keeps rows, and sources after it are untouched.
+    let mut removed = vec![];
+    let mut updated = None;
+    for fragment in &fragments {
+        let id = fragment.id() as u64;
+        let moved: Vec<_> = addresses.iter().filter(|a| *a >> 32 == id).collect();
+        if moved.is_empty() {
+            if fragment.count_rows(None).await? == 0 {
+                removed.push(id);
+            }
+            continue;
+        }
         let predicate = format!(
             "_rowaddr IN ({})",
-            addresses
-                .iter()
-                .map(u64::to_string)
-                .collect::<Vec<_>>()
-                .join(",")
+            moved.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(",")
         );
-        fragment
-            .delete(&predicate)
-            .await?
-            .map(|f| f.metadata().clone())
-    };
+        match fragment.clone().delete(&predicate).await? {
+            None => removed.push(id),
+            Some(f) => {
+                ensure!(updated.is_none(), "Relocation drained more than one source in part");
+                updated = Some(f.metadata().clone());
+            }
+        }
+    }
     {
         let proof = receipt
             .repair
@@ -348,11 +416,7 @@ pub async fn execute(
         "Head changed before relocation publication"
     );
     let operation = Operation::Update {
-        removed_fragment_ids: if updated.is_none() {
-            vec![source]
-        } else {
-            vec![]
-        },
+        removed_fragment_ids: removed,
         updated_fragments: updated.into_iter().collect(),
         new_fragments: staged,
         fields_modified: vec![],
@@ -464,7 +528,7 @@ pub async fn verify(
         before.schema() == after.schema(),
         "Relocation schema changed"
     );
-    let source = receipt.selected_fragment_ids[0];
+    let sources = &receipt.selected_fragment_ids;
     let old: BTreeMap<_, _> = before
         .manifest
         .fragments
@@ -473,10 +537,24 @@ pub async fn verify(
         .collect();
     let new: BTreeMap<_, _> = after.manifest.fragments.iter().map(|f| (f.id, f)).collect();
     for (id, fragment) in &old {
-        if *id == source {
+        if sources.contains(id) {
+            // Each source lost exactly the rows that moved: all of them when
+            // removed, none when untouched, the moved ones when updated.
+            let moved = proof.addresses.iter().filter(|a| *a >> 32 == *id).count();
+            let left = match new.get(id) {
+                None => 0,
+                Some(f) if f == fragment => live_rows(fragment)?,
+                Some(f) => {
+                    ensure!(
+                        moved > 0 && proof.updated.as_ref() == Some(*f),
+                        "Relocation source deletion changed"
+                    );
+                    live_rows(f)?
+                }
+            };
             ensure!(
-                new.get(id).copied() == proof.updated.as_ref(),
-                "Relocation source deletion changed"
+                live_rows(fragment)? == left + moved,
+                "Relocation source rows not accounted for"
             );
         } else {
             ensure!(
@@ -492,6 +570,7 @@ pub async fn verify(
         .collect();
     ensure!(
         replacements.len() == proof.staged.len()
+            && replacements.len() <= 1
             && replacements
                 .iter()
                 .all(|f| proof.staged.iter().any(|s| s.files == f.files
@@ -513,7 +592,7 @@ pub async fn verify(
     // Check the saved row identities against the protected source, in bounded
     // batches. This also prevents a forged address list from authorizing loss.
     ensure!(
-        before.get_fragment(source as usize).is_some(),
+        sources.iter().all(|id| old.contains_key(id)),
         "Protected source missing"
     );
     let mut original = vec![];

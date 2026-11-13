@@ -44,12 +44,13 @@ impl Proof {
                 && orphan.valid();
         }
         if let Some(relocation) = &self.relocation {
-            return self.fragments.len() == 1
+            return !self.fragments.is_empty()
+                && self.fragments.iter().collect::<BTreeSet<_>>().len() == self.fragments.len()
                 && self.name.is_empty()
                 && self.field.is_empty()
                 && self.merge.is_empty()
                 && self.output.is_none()
-                && relocation.valid(self.fragments[0]);
+                && relocation.valid(&self.fragments);
         }
         !self.fragments.is_empty()
             && self.fragments.len() <= if self.merge.is_empty() { 64 } else { 4096 }
@@ -127,15 +128,14 @@ pub async fn plan(
 ) -> Result<Option<Proof>> {
     let operation = request.operation.as_deref().unwrap_or("repair");
     let scannable = crate::engine::scannable(dataset);
-    if operation == "repair-orphans" || operation == "repair-relocate" {
-        ensure!(scannable, "Too many fragments for bounded metadata");
-    }
     if operation == "repair-orphans" {
+        ensure!(scannable, "Too many fragments for bounded metadata");
         return crate::orphans::plan(root);
     }
     let relocate = !request.defers("row-relocation");
-    if operation == "repair" && scannable {
-        if !request.defers("orphan-reclamation")
+    if operation == "repair" {
+        if scannable
+            && !request.defers("orphan-reclamation")
             && let Some(proof) = crate::orphans::plan(root)?
         {
             return Ok(Some(proof));
@@ -337,7 +337,7 @@ pub async fn plan(
             }));
         }
     }
-    if operation != "repair-indexes" && scannable && relocate {
+    if operation != "repair-indexes" && relocate {
         if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
             return Ok(Some(proof));
         }
