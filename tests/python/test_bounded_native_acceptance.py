@@ -66,7 +66,7 @@ class NativeSession:
         self.process.stdin.write((self.nonce if value is None else value) + '\n')
         self.process.stdin.flush()
 
-    def next(self, timeout=30):
+    def next(self, timeout=120):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if select.select([self.process.stdout], [], [], 0.1)[0]:
