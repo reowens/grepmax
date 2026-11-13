@@ -306,6 +306,131 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertEqual(current.to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
             self.assertEqual(current.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist(), [11])
 
+    def drained(self, home):
+        """A store at the 64-segment bound on both search indexes where every
+        segment but 1 names a fragment relocation drained, as on a live store.
+        A real relocation adds a segment covering only current fragments, so
+        62 drains are relocation's own commit made here (an update writing the
+        fragment's live rows anew and removing it), and the last is the
+        helper's, taking both indexes from 63 segments to 64."""
+        import lance
+        import pyarrow as pa
+        from datetime import timedelta
+        from lance.fragment import write_fragments
+        root = Path(home) / 'store' / 'chunks.lance'
+        root.parent.mkdir()
+        ds = fixture_support.BoundedCleanupAcceptance.fixture(root, deleted=False)
+        ds.merge(pa.table({'id': pa.array(range(2048), type=pa.int32()),
+                           'path': [f'/fixture/β/{i}.ts' for i in range(2048)]}),
+                 left_on='id')
+        base = sorted(f.fragment_id for f in lance.dataset(str(root)).get_fragments())
+        seed = lance.dataset(str(root)).to_table(filter='id = 11').to_pylist()[0]
+        rows = [{**seed, 'id': 20000 + n, 'path': f'/pair/{n}.ts', 'content': f'needle pair{n} lexical'}
+                for n in range(252)]
+        ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=ds.schema), str(root),
+                                 mode='append', max_rows_per_file=2)
+        pairs = sorted(f.fragment_id for f in ds.get_fragments() if f.fragment_id not in base)
+        assert len(pairs) == 126, len(pairs)
+        # Each segment covers a fragment to drain and one that stays, so no
+        # drain leaves a segment without current coverage.
+        groups = [base + pairs[:2]] + [pairs[2 * k:2 * k + 2] for k in range(1, 63)]
+        for name, field, kind in (('content_idx', 'content', 'INVERTED'), ('path_idx', 'path', 'BTREE')):
+            built = [ds.create_index_uncommitted(field, kind, name=name, replace=True, fragment_ids=group)
+                     for group in groups]
+            ds = ds.commit_existing_index_segments(name, field, built)
+        for k in range(62):
+            ds = lance.dataset(str(root))
+            moved = write_fragments(ds.get_fragment(pairs[2 * k]).to_table(), str(root), schema=ds.schema)
+            lance.LanceDataset.commit(str(root), lance.LanceOperation.Update(
+                removed_fragment_ids=[pairs[2 * k]], new_fragments=moved), read_version=ds.version)
+        lance.dataset(str(root)).delete('id = 20248')
+        session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+        try:
+            self.assertEqual(session.reach('result')['operation'], 'row-relocation')
+        finally:
+            session.close()
+        ds = lance.dataset(str(root))
+        ds.cleanup_old_versions(older_than=timedelta(0), delete_unverified=True,
+                                error_if_tagged_old_versions=False)
+        ds = lance.dataset(str(root))
+        current = {f.fragment_id for f in ds.get_fragments()}
+        drained = set(pairs[0:126:2])
+        assert not drained & current
+        for name in ('content_idx', 'path_idx'):
+            segments = [index for index in ds.list_indices() if index['name'] == name]
+            assert len(segments) == 64, (name, len(segments))
+            assert sum(bool(set(index['fragment_ids']) - current) for index in segments) == 63, name
+        return root, drained
+
+    def test_index_merge_takes_segments_that_name_drained_fragments(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-drained-merge-') as home:
+            root, drained = self.drained(home)
+            # Rows moved out of drained fragments, rows beside them, the row
+            # deleted before its fragment drained, and a base row.
+            probes = [0, 1, 2, 3, 100, 101, 102, 248, 249, 251]
+
+            def searches(ds):
+                return ([ds.to_table(full_text_query={'query': f'pair{n}', 'columns': ['content']})['id'].to_pylist()
+                         for n in probes],
+                        [ds.to_table(filter=f"path = '/pair/{n}.ts'")['id'].to_pylist() for n in probes],
+                        sorted(ds.to_table(full_text_query={'query': 'needle', 'columns': ['content']})['id'].to_pylist()),
+                        ds.to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(),
+                        ds.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist())
+
+            def covered(ds, name):
+                return {f for index in ds.list_indices() if index['name'] == name
+                        for f in index['fragment_ids']}
+
+            ds = lance.dataset(str(root))
+            digest = fixture_support.row_digest(ds)
+            before = searches(ds)
+            self.assertEqual(before[0], [[] if n == 248 else [20000 + n] for n in probes])
+            self.assertEqual(before[1], before[0])
+            self.assertEqual(before[2], sorted(ds.to_table(columns=['id'])['id'].to_pylist()))
+            live = {f.fragment_id for f in ds.get_fragments()}
+            kept = {name: covered(ds, name) & live for name in ('content_idx', 'path_idx')}
+            merged = set()
+            for _ in range(40):
+                session = NativeSession(self.binary, root, qualification={'operation': 'repair-indexes'})
+                try:
+                    result = session.reach('result')
+                    self.assertEqual(result['dataBytesWritten'], 0)
+                    self.assertFalse(result['recoveryPending'])
+                finally:
+                    session.close()
+                if result['status'] == 'no-work':
+                    break
+                receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                if len(receipt['repair']['merge']) >= 2:
+                    merged.add(receipt['repair']['field'])
+                current = lance.dataset(str(root))
+                for name in kept:
+                    now = covered(current, name) & live
+                    self.assertLessEqual(kept[name], now, f'{name} lost coverage of a current fragment')
+                    kept[name] = now
+            self.assertEqual(merged, {'content', 'path'})
+            current = lance.dataset(str(root))
+            self.assertEqual(result['status'], 'no-work')
+            self.assertEqual(fixture_support.row_digest(current), digest)
+            for name in kept:
+                segments = [index for index in current.list_indices() if index['name'] == name]
+                self.assertLess(len(segments), 8, name)
+                self.assertLessEqual(live, covered(current, name), name)
+                # A name outside the manifest is only ever a drained fragment.
+                self.assertLessEqual(covered(current, name) - live, drained, name)
+            self.assertEqual(searches(current), before)
+            # Below the bound, relocation runs again.
+            current.delete('id = 20002')
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+            try:
+                self.assertEqual(session.reach('result')['operation'], 'row-relocation')
+            finally:
+                session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(current.to_table(full_text_query={'query': 'pair3', 'columns': ['content']})['id'].to_pylist(), [20003])
+            self.assertEqual(current.to_table(filter="path = '/pair/3.ts'")['id'].to_pylist(), [20003])
+
     def test_index_refresh_runs_past_the_whole_manifest_scan_bound(self):
         import lance
         import pyarrow as pa

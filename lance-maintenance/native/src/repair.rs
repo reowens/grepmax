@@ -206,9 +206,9 @@ pub async fn plan(
                     .iter(),
             );
         }
-        // Merge small current segments before adding more. Never include a
-        // large base merely to avoid a refusal, or replace a partially stale
-        // segment (the SDK correctly rejects partial overlap).
+        // Merge small segments before adding more. Never include a large base
+        // merely to avoid a refusal. A segment may still name fragments that
+        // relocation drained; it merges like any other (see `rebase_merge`).
         if indices.len() >= 8 {
             let current: BTreeSet<_> = dataset
                 .manifest
@@ -218,11 +218,7 @@ pub async fn plan(
                 .collect();
             let mut eligible = vec![];
             for index in indices.drain(..) {
-                if index
-                    .fragment_bitmap
-                    .as_ref()
-                    .is_some_and(|b| b.iter().all(|id| current.contains(&id)))
-                {
+                if index.fragment_bitmap.is_some() {
                     // The pinned FTS merger finalizes legacy partition layouts
                     // in-place. Such inputs are not immutable bounded merge
                     // sources; keep them intact and build a new segment instead.
@@ -257,7 +253,9 @@ pub async fn plan(
             if picked.len() >= 2 {
                 let fragments = picked
                     .iter()
-                    .flat_map(|i| i.fragment_bitmap.as_ref().unwrap().iter().map(u64::from))
+                    .flat_map(|i| i.fragment_bitmap.as_ref().unwrap().iter())
+                    .filter(|id| current.contains(id))
+                    .map(u64::from)
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
@@ -420,9 +418,15 @@ pub async fn execute(
     Ok(())
 }
 /// A merge output may carry the head's version only when every source is a
-/// committed segment of this head covering current fragments, and no
-/// fragment-reuse index defers a remap that coverage would have to follow.
-/// Overlays are refused when the store opens.
+/// committed segment of this head, and no fragment-reuse index defers a remap
+/// that coverage would have to follow. Overlays are refused when the store
+/// opens.
+///
+/// A source may name fragments the head no longer has (relocation drains its
+/// source; Lance keeps the bit, as after a whole-fragment delete). Fragment
+/// ids are never reused, so such a bit claims no current rows: a B-tree merge
+/// drops those rows and bits, and an inverted merge keeps both, the bits being
+/// what blocks the dead postings at search.
 fn rebase_merge(
     dataset: &Dataset,
     all: &[IndexMetadata],
@@ -433,19 +437,9 @@ fn rebase_merge(
             .any(|i| i.name == lance_table::system_index::frag_reuse::FRAG_REUSE_INDEX_NAME),
         "Deferred fragment remap refuses segment merge"
     );
-    let current: BTreeSet<_> = dataset
-        .manifest
-        .fragments
-        .iter()
-        .map(|f| f.id as u32)
-        .collect();
     for index in selected {
         ensure!(
-            index.dataset_version <= dataset.manifest.version
-                && index
-                    .fragment_bitmap
-                    .as_ref()
-                    .is_some_and(|b| b.iter().all(|id| current.contains(&id))),
+            index.dataset_version <= dataset.manifest.version && index.fragment_bitmap.is_some(),
             "Merge source coverage is not current"
         );
     }
@@ -490,15 +484,22 @@ pub async fn verify(
             && added.index_details == template.index_details,
         "Scalar contract changed"
     );
+    let current: BTreeSet<u64> = after.manifest.fragments.iter().map(|f| f.id).collect();
+    let named: BTreeSet<u64> = old
+        .iter()
+        .filter(|index| proof.merge.contains(&index.uuid.to_string()))
+        .filter_map(|index| index.fragment_bitmap.as_ref())
+        .flat_map(|b| b.iter().map(u64::from))
+        .collect();
+    let (live, gone): (BTreeSet<u64>, BTreeSet<u64>) = added
+        .fragment_bitmap
+        .as_ref()
+        .context("New coverage missing")?
+        .iter()
+        .map(u64::from)
+        .partition(|id| current.contains(id));
     ensure!(
-        added
-            .fragment_bitmap
-            .as_ref()
-            .context("New coverage missing")?
-            .iter()
-            .map(u64::from)
-            .collect::<BTreeSet<_>>()
-            == proof.fragments.iter().copied().collect(),
+        live == proof.fragments.iter().copied().collect() && gone.is_subset(&named),
         "Selected scalar coverage changed"
     );
     for original in old {

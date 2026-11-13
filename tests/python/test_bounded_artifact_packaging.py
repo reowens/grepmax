@@ -22,6 +22,7 @@ CASES = [
     'test_repeated_index_catchup_merges_small_segments',
     'test_index_merge_commits_after_its_source_versions_are_pruned',
     'test_relocation_at_the_segment_bound_refuses_before_writing_and_merges_first',
+    'test_index_merge_takes_segments_that_name_drained_fragments',
 ] + ['fixture_case_' + str(i) for i in range(9)]
 
 
