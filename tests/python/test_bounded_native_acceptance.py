@@ -441,6 +441,22 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertEqual(current.to_table(full_text_query={'query': 'pair3', 'columns': ['content']})['id'].to_pylist(), [20003])
             self.assertEqual(current.to_table(filter="path = '/pair/3.ts'")['id'].to_pylist(), [20003])
 
+    def test_an_index_at_the_segment_bound_merges_before_another_index_backlog(self):
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bound-order-') as home:
+            root, _ = self.drained(home)
+            fields = []
+            for _ in range(2):
+                session = NativeSession(self.binary, root, qualification={'operation': 'repair-indexes'})
+                try:
+                    session.reach('result')
+                finally:
+                    session.close()
+                receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                self.assertGreaterEqual(len(receipt['repair']['merge']), 2)
+                fields.append(receipt['repair']['field'])
+            # content is under the bound after 1 merge; path, still at it, is next.
+            self.assertEqual(fields, ['content', 'path'])
+
     @staticmethod
     def small_fragments(home):
         """A store shaped like a live one after months of edits: many 5-row

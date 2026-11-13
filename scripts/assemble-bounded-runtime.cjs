@@ -54,6 +54,7 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
     "test_relocation_at_the_segment_bound_refuses_before_writing_and_merges_first",
     "test_index_merge_takes_segments_that_name_drained_fragments",
     "test_relocation_merges_small_fragments_and_reclaims_their_deleted_rows",
+    "test_an_index_at_the_segment_bound_merges_before_another_index_backlog",
   ]) {
     if (!proof.testCases.some(name => typeof name === "string" && (name === test || name.endsWith(`.${test}`)))) throw new Error(`Required native acceptance case absent: ${test}`);
   }

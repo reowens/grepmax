@@ -172,7 +172,10 @@ pub async fn plan(
             .filter_map(|i| i.fragment_bitmap.as_ref())
             .flat_map(|b| b.iter())
             .collect();
+        // An index at the segment bound blocks relocation and its own new
+        // segments, so its merge goes ahead of another index's backlog.
         (
+            indices.len() < SEGMENTS,
             dataset
                 .manifest
                 .fragments
