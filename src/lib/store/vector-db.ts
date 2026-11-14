@@ -20,12 +20,16 @@ import {
 } from "../../config";
 import {
   embeddingReuseKey,
-  type ReusableEmbedding,
   toBytes,
   toFloat32,
   toInt32,
 } from "../index/embedding-reuse";
 import { readGlobalConfig } from "../index/index-config";
+import {
+  KEPT_ROW_COLUMNS,
+  keptRowKey,
+  type StoredFileRows,
+} from "../index/kept-rows";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
@@ -2415,18 +2419,19 @@ export class VectorDB {
   }
 
   /**
-   * The stored embeddings of one file, keyed by `embeddingReuseKey(content)`.
-   * Rows whose dense width disagrees with this table are left out rather than
-   * offered — reuse must never be the way a wrong-width vector gets copied.
+   * One file's stored rows: their embeddings keyed by
+   * `embeddingReuseKey(content)`, and each row's id with its `keptRowKey`.
+   * Rows whose dense width disagrees with this table are left out of both
+   * rather than offered: reuse must never be the way a wrong-width vector gets
+   * copied, and such a row is deleted when the file is rewritten.
    */
-  async getReusableEmbeddings(
-    filePath: string,
-  ): Promise<Map<string, ReusableEmbedding>> {
+  async getStoredRows(filePath: string): Promise<StoredFileRows> {
     const table = await this.ensureTable();
     const rows = await table
       .query()
       .select([
-        "content",
+        "id",
+        ...KEPT_ROW_COLUMNS,
         "vector",
         "colbert",
         "colbert_scale",
@@ -2435,7 +2440,7 @@ export class VectorDB {
       ])
       .where(`path = '${escapeSqlString(filePath)}'`)
       .toArray(QUERY_EXECUTION_OPTIONS);
-    const reusable = new Map<string, ReusableEmbedding>();
+    const stored: StoredFileRows = { embeddings: new Map(), rows: [] };
     for (const row of rows) {
       const vector = toFloat32(row.vector);
       const colbert = toBytes(row.colbert);
@@ -2446,7 +2451,7 @@ export class VectorDB {
           : toFloat32(row.pooled_colbert_48d);
       const tokenIds =
         row.doc_token_ids == null ? undefined : toInt32(row.doc_token_ids);
-      reusable.set(embeddingReuseKey(String(row.content ?? "")), {
+      stored.embeddings.set(embeddingReuseKey(String(row.content ?? "")), {
         vector,
         colbert,
         colbert_scale:
@@ -2454,8 +2459,9 @@ export class VectorDB {
         pooled_colbert_48d: pooled?.length ? pooled : undefined,
         doc_token_ids: tokenIds,
       });
+      stored.rows.push({ id: String(row.id), key: keptRowKey(row) });
     }
-    return reusable;
+    return stored;
   }
 
   async getStats(): Promise<{ chunks: number; totalBytes: number }> {

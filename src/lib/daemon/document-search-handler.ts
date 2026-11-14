@@ -148,7 +148,7 @@ export async function handleDocumentSearch(
       .vectorSearch(encoded.dense)
       .distanceType("cosine")
       .where(documentFilter(prefixes))
-      .select(["path", "hash", "start_line", "end_line", "_distance"])
+      .select(["path", "start_line", "end_line", "_distance"])
       .limit(DOCUMENT_LIMITS.candidates)
       .toArray({ timeoutMs: remainingMs })) as any[];
     recheck();
@@ -172,13 +172,13 @@ export async function handleDocumentSearch(
       )
         return [];
       const entry = deps.meta(row.path);
-      // Only a matching current metadata revision proves this row's digest is bytes.
+      // A row kept across edits carries the hash it was written at; the file's
+      // current byte digest is the metadata entry's.
       const hash =
         entry?.hashVersion === 1 &&
         entry.hasVectors === true &&
-        row.hash === entry.hash &&
-        /^[a-f0-9]{64}$/.test(row.hash)
-          ? { hash: row.hash, hashAlgorithm: "sha256-bytes" }
+        /^[a-f0-9]{64}$/.test(entry.hash)
+          ? { hash: entry.hash, hashAlgorithm: "sha256-bytes" }
           : {};
       return [
         {

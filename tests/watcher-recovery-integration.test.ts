@@ -57,7 +57,7 @@ async function fixture(mode: "daemon" | "standalone") {
     getDistinctPathsForPrefix: vi.fn(
       async () => new Set([...rows.values()].map((r) => r.path)),
     ),
-    getReusableEmbeddings: vi.fn(async () => new Map()),
+    getStoredRows: vi.fn(async () => ({ embeddings: new Map(), rows: [] })),
     insertBatch: vi.fn(async (records: any[]) => {
       for (const record of records) rows.set(record.id, record);
     }),

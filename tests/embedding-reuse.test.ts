@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONFIG } from "../src/config";
 import { resolveEmbeddingGeneration } from "../src/lib/index/embedding-generation";
 import { embeddingReuseKey } from "../src/lib/index/embedding-reuse";
+import { keptRowKey } from "../src/lib/index/kept-rows";
 import type { VectorRecord } from "../src/lib/store/types";
 import { VectorDB } from "../src/lib/store/vector-db";
 
@@ -50,7 +51,7 @@ function record(filePath: string, content: string, seed: number): VectorRecord {
   };
 }
 
-describe("VectorDB.getReusableEmbeddings", () => {
+describe("VectorDB.getStoredRows", () => {
   let dir: string;
 
   beforeEach(() => {
@@ -61,16 +62,29 @@ describe("VectorDB.getReusableEmbeddings", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("returns exactly the stored embeddings of one file, keyed by content", async () => {
+  it("returns exactly the stored embeddings and rows of one file", async () => {
     const db = new VectorDB(dir, DIM);
     const target = "/repo/docs/it's a plan.md";
     await db.insertBatch([
-      record(target, "alpha", 1),
+      { ...record(target, "alpha", 1), complexity: 0.3 },
       record(target, "beta", 2),
       record("/repo/docs/other.md", "alpha", 3),
     ]);
 
-    const reusable = await db.getReusableEmbeddings(target);
+    const stored = await db.getStoredRows(target);
+    const reusable = stored.embeddings;
+
+    expect(stored.rows.map((r) => r.id).sort()).toEqual([
+      "it's a plan.md-1",
+      "it's a plan.md-2",
+    ]);
+    // A record and its stored row compare equal after the insert round trip.
+    expect(stored.rows.map((r) => r.key).sort()).toEqual(
+      [
+        keptRowKey({ ...record(target, "alpha", 1), complexity: 0.3 }),
+        keptRowKey(record(target, "beta", 2)),
+      ].sort(),
+    );
 
     expect([...reusable.keys()].sort()).toEqual(
       [embeddingReuseKey("alpha"), embeddingReuseKey("beta")].sort(),
@@ -89,7 +103,7 @@ describe("VectorDB.getReusableEmbeddings", () => {
     await db.insertBatch([
       { ...record(target, "beta", 2), id: "copy", ...beta },
     ]);
-    const again = await db.getReusableEmbeddings(target);
+    const again = (await db.getStoredRows(target)).embeddings;
     expect(again.get(embeddingReuseKey("beta"))!.vector).toEqual(beta.vector);
     await db.close();
   });
@@ -97,7 +111,10 @@ describe("VectorDB.getReusableEmbeddings", () => {
   it("returns nothing for an unindexed file", async () => {
     const db = new VectorDB(dir, DIM);
     await db.ensureTable();
-    expect((await db.getReusableEmbeddings("/repo/none.ts")).size).toBe(0);
+    expect(await db.getStoredRows("/repo/none.ts")).toEqual({
+      embeddings: new Map(),
+      rows: [],
+    });
     await db.close();
   });
 });

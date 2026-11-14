@@ -7,6 +7,7 @@ import {
   CURRENT_META_HASH_VERSION,
   isMetaEntryCacheCurrent,
 } from "./cache-coherence";
+import { writeRows } from "./kept-rows";
 
 export interface MetaCacheLike {
   get(filePath: string): MetaEntry | undefined;
@@ -145,17 +146,11 @@ export async function flushBatchToDb(
   result: BatchResult,
   vectorDb: VectorDbLike,
 ): Promise<void> {
-  const newIds = result.vectors.map((v) => v.id);
-  if (result.vectors.length > 0) {
-    await vectorDb.insertBatch(result.vectors);
-  }
-  if (result.deletes.length > 0) {
-    if (newIds.length > 0) {
-      await vectorDb.deletePathsExcludingIds(result.deletes, newIds);
-    } else {
-      await vectorDb.deletePaths(result.deletes);
-    }
-  }
+  await writeRows(
+    vectorDb,
+    { records: result.vectors, keptIds: [] },
+    result.deletes,
+  );
 }
 
 export function computePathRetry(

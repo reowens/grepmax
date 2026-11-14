@@ -238,13 +238,6 @@ async function run() {
             cache.get(file)?.hash,
           ))
             exclusions.add(reason);
-          if (
-            data.some(
-              (d) =>
-                d.metadata?.path === file && d.metadata.hash !== t.sourceSha256,
-            )
-          )
-            exclusions.add("returned_row_hash_mismatch");
         }
         const ranked: SearchResponse = { data };
         samples.push({

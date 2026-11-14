@@ -470,10 +470,13 @@ export type MetaReconcileEntry = {
 
 /**
  * After a rollback, a file whose metadata records vectors at a hash the table
- * no longer holds would stay out of search until it changes again. The rows'
- * hash column is the file's content hash, so it is the exact signal. Marking a
- * file removes its metadata entry: the next catch-up reprocesses any file with
- * no entry and rewrites its rows.
+ * no longer holds would stay out of search until it changes again. A row's
+ * hash column is the file's content hash when that row was written, and every
+ * edit that writes a row writes it at the new hash, so no row at the recorded
+ * hash means that write was rolled back. An edit that kept every row wrote
+ * none, so its file is also marked; that costs one rewrite. Marking a file
+ * removes its metadata entry: the next catch-up reprocesses any file with no
+ * entry and rewrites its rows.
  */
 export async function reconcileMetaWithTable(
   table: { getPathHashes(): Promise<Map<string, Set<string>>> },

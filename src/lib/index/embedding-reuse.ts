@@ -8,7 +8,9 @@ import { createHash } from "node:crypto";
  * stored vectors are exactly what re-embedding it would produce.
  *
  * Only offered for a watched project, whose rows are on the active embedding
- * generation — a stale project is refused before it is watched.
+ * generation — a stale project is refused before it is watched. A reused chunk
+ * whose stored row is equal in every other column keeps that row in place
+ * (`kept-rows.ts`), so its `hash` stays the revision it was written at.
  */
 export type ReusableEmbedding = {
   vector: Float32Array;

@@ -1675,9 +1675,10 @@ describe("ProjectBatchProcessor", () => {
 
     it("offers stored keys and fills the chunks the worker reused", async () => {
       seedIndexedMeta();
-      vectorDb.getReusableEmbeddings = vi.fn(
-        async () => new Map([["kept-key", stored]]),
-      );
+      vectorDb.getStoredRows = vi.fn(async () => ({
+        embeddings: new Map([["kept-key", stored]]),
+        rows: [],
+      }));
       pool.processFile.mockResolvedValue({
         ...makeWorkerResult(filePath),
         vectors: [
@@ -1692,7 +1693,7 @@ describe("ProjectBatchProcessor", () => {
       startReadyBatch(processor);
       await (processor as any).activeBatch;
 
-      expect(vectorDb.getReusableEmbeddings).toHaveBeenCalledWith(filePath);
+      expect(vectorDb.getStoredRows).toHaveBeenCalledWith(filePath);
       expect(pool.processFile.mock.calls[0][0].reusableKeys).toEqual([
         "kept-key",
       ]);
@@ -1703,33 +1704,37 @@ describe("ProjectBatchProcessor", () => {
 
     it("does not offer stored embeddings to a forced repair", async () => {
       seedIndexedMeta();
-      vectorDb.getReusableEmbeddings = vi.fn(
-        async () => new Map([["kept-key", stored]]),
-      );
+      vectorDb.getStoredRows = vi.fn(async () => ({
+        embeddings: new Map([["kept-key", stored]]),
+        rows: [],
+      }));
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath, { forceReprocess: true });
       startReadyBatch(processor);
       await (processor as any).activeBatch;
 
-      expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
+      expect(vectorDb.getStoredRows).not.toHaveBeenCalled();
       expect(pool.processFile.mock.calls[0][0].reusableKeys).toBeUndefined();
     });
 
     it("does not look up a file that was never indexed", async () => {
-      vectorDb.getReusableEmbeddings = vi.fn(async () => new Map());
+      vectorDb.getStoredRows = vi.fn(async () => ({
+        embeddings: new Map(),
+        rows: [],
+      }));
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath);
       startReadyBatch(processor);
       await (processor as any).activeBatch;
 
-      expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
+      expect(vectorDb.getStoredRows).not.toHaveBeenCalled();
     });
 
     it("re-embeds everything when the lookup fails", async () => {
       seedIndexedMeta();
-      vectorDb.getReusableEmbeddings = vi.fn(async () => {
+      vectorDb.getStoredRows = vi.fn(async () => {
         throw new Error("store busy");
       });
       const processor = makeProcessor();
@@ -1744,9 +1749,10 @@ describe("ProjectBatchProcessor", () => {
 
     it("retries instead of storing a reused chunk it cannot fill", async () => {
       seedIndexedMeta();
-      vectorDb.getReusableEmbeddings = vi.fn(
-        async () => new Map([["kept-key", stored]]),
-      );
+      vectorDb.getStoredRows = vi.fn(async () => ({
+        embeddings: new Map([["kept-key", stored]]),
+        rows: [],
+      }));
       pool.processFile.mockResolvedValue({
         ...makeWorkerResult(filePath),
         vectors: [{ id: "kept", path: filePath, vector: new Float32Array() }],

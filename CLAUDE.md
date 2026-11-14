@@ -538,9 +538,11 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
     Send to WorkerPool.processFile()
       Worker: read -> hash -> chunk (tree-sitter) -> embed (MLX or ONNX) -> return vectors
     If hash unchanged -> update meta only, no vector write ("0 reindexed")
-    If hash changed -> delete old vectors, insert new, update meta
+    If hash changed -> keep each stored row a new row equals, insert the rest,
+      delete the file's other rows, update meta (kept-rows.ts)
     If shouldDelete -> delete vectors, update meta
-  Flush once after all file tasks settle: insert vectors -> delete old paths -> update MetaCache
+  Flush once after all file tasks settle: insert vectors -> delete old paths
+    (excluding inserted and kept ids) -> update MetaCache
   Report reindex count
   If pending files remain, reschedule
 ```
@@ -776,6 +778,8 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/lib/index/batch-processor.ts` — `ProjectBatchProcessor`: incremental reindex from watcher events
 - `src/lib/index/walker.ts` — File tree walker with gitignore support
 - `src/lib/index/chunker.ts` — Tree-sitter chunking
+- `src/lib/index/prepared-chunks.ts` — chunks and row preparation, before embedding
+- `src/lib/index/kept-rows.ts` — which stored rows an edit keeps; the insert-then-delete flush every writer uses
 - `src/lib/utils/cache-check.ts` — `isFileCached()`: mtime+size comparison
 
 ### Worker Pool & Embedding

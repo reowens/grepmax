@@ -32,6 +32,7 @@ import {
 } from "./cache-coherence";
 import type { ReusableEmbedding } from "./embedding-reuse";
 import { ProjectFilePolicy } from "./file-policy";
+import { keepStoredRows, type StoredFileRows, writeRows } from "./kept-rows";
 import { computePathRetry } from "./watcher-batch";
 
 export interface BatchProcessorOptions {
@@ -350,16 +351,16 @@ export class ProjectBatchProcessor {
     };
   }
 
-  private async loadReusableEmbeddings(
+  private async loadStoredRows(
     absPath: string,
-  ): Promise<Map<string, ReusableEmbedding> | undefined> {
-    // An optimisation only: a failed lookup costs a full re-embed, nothing more.
+  ): Promise<StoredFileRows | undefined> {
+    // An optimisation only: a failed lookup costs a full rewrite, nothing more.
     try {
-      return await this.vectorDb.getReusableEmbeddings(absPath);
+      return await this.vectorDb.getStoredRows(absPath);
     } catch (err) {
       debug(
         this.wtag,
-        `embedding reuse lookup failed for ${absPath}: ${err instanceof Error ? err.message : String(err)}`,
+        `stored row lookup failed for ${absPath}: ${err instanceof Error ? err.message : String(err)}`,
       );
       return undefined;
     }
@@ -594,6 +595,7 @@ export class ProjectBatchProcessor {
       const pool = this.workerPool;
       const deletes: string[] = [];
       const vectors: VectorRecord[] = [];
+      const keptIds: string[] = [];
       const metaUpdates = new Map<string, MetaEntry>();
       const metaDeletes: string[] = [];
       const completed = new Set<string>();
@@ -666,6 +668,7 @@ export class ProjectBatchProcessor {
         }
         const taken = {
           vectors: vectors.splice(0, vectors.length),
+          keptIds: keptIds.splice(0, keptIds.length),
           deletes: commitDeletes,
           meta: new Map(metaUpdates),
           reindexed,
@@ -678,14 +681,11 @@ export class ProjectBatchProcessor {
         return taken;
       };
       const writeSettled = async (taken: ReturnType<typeof takeSettled>) => {
-        const newIds = taken.vectors.map((v) => v.id);
-        if (taken.vectors.length > 0)
-          await this.vectorDb.insertBatch(taken.vectors);
-        if (taken.deletes.length > 0) {
-          if (newIds.length > 0)
-            await this.vectorDb.deletePathsExcludingIds(taken.deletes, newIds);
-          else await this.vectorDb.deletePaths(taken.deletes);
-        }
+        await writeRows(
+          this.vectorDb,
+          { records: taken.vectors, keptIds: taken.keptIds },
+          taken.deletes,
+        );
         for (const [p, entry] of taken.meta) {
           this.metaCache.put(p, entry);
           completed.delete(p);
@@ -779,9 +779,9 @@ export class ProjectBatchProcessor {
           }
 
           // A forced reprocess is a repair; it must not trust what is stored.
-          const reusable =
+          const stored =
             !forceReprocess && cached?.hasVectors !== false && cached?.hash
-              ? await this.loadReusableEmbeddings(absPath)
+              ? await this.loadStoredRows(absPath)
               : undefined;
           const fileStart = Date.now();
           const route = readBackgroundEmbeddingConfig();
@@ -800,8 +800,8 @@ export class ProjectBatchProcessor {
               absolutePath: absPath,
               projectRoot: this.projectRoot,
               remoteEmbedding: route.mode === "remote",
-              ...(reusable?.size
-                ? { reusableKeys: Array.from(reusable.keys()) }
+              ...(stored?.embeddings.size
+                ? { reusableKeys: Array.from(stored.embeddings.keys()) }
                 : {}),
             },
             batchAc.signal,
@@ -824,10 +824,15 @@ export class ProjectBatchProcessor {
               return;
             }
           }
-          applyReusedEmbeddings(result, reusable);
+          applyReusedEmbeddings(result, stored?.embeddings);
+          const rows = keepStoredRows(
+            result.vectors,
+            result.reused?.map((r) => r.index) ?? [],
+            stored?.rows,
+          );
           log(
             this.wtag,
-            `Embedded ${path.basename(absPath)}: ${result.vectors.length} chunks, ${result.reused?.length ?? 0} reused (${((Date.now() - fileStart) / 1000).toFixed(1)}s)`,
+            `Embedded ${path.basename(absPath)}: ${result.vectors.length} chunks, ${result.reused?.length ?? 0} reused, ${rows.keptIds.length} kept, ${rows.records.length} written (${((Date.now() - fileStart) / 1000).toFixed(1)}s)`,
           );
 
           // Policy and filesystem state can change while embedding is in
@@ -880,9 +885,8 @@ export class ProjectBatchProcessor {
           }
 
           deletes.push(absPath);
-          if (result.vectors.length > 0) {
-            vectors.push(...result.vectors);
-          }
+          vectors.push(...rows.records);
+          keptIds.push(...rows.keptIds);
           metaUpdates.set(absPath, metaEntry);
           reindexed++;
           completed.add(absPath);
@@ -1009,33 +1013,29 @@ export class ProjectBatchProcessor {
         backoffOverrideMs = 60_000;
       }
 
-      // Flush to VectorDB: insert first, then delete old (preserving new)
-      const newIds = vectors.map((v) => v.id);
-      if (vectors.length > 0) {
-        await this.vectorDb.insertBatch(vectors);
-      }
-      for (const absPath of [...authoritativeMetaDeletes]) {
-        const current = await this.filePolicy.classifyFile(absPath);
-        if (current.status === "missing" || current.status === "excluded") {
-          continue;
-        }
-        authoritativeMetaDeletes.delete(absPath);
-        completed.delete(absPath);
-        batch.set(absPath, "change");
-        requeuePath(absPath, "change", current.status === "error");
-      }
-      const deletesToApply = deletes.filter(
-        (absPath) =>
-          !pureDeleteCandidates.has(absPath) ||
-          authoritativeMetaDeletes.has(absPath),
+      // Pure deletes are classified once more after the insert, right before
+      // their rows go.
+      await writeRows(
+        this.vectorDb,
+        { records: vectors, keptIds },
+        async () => {
+          for (const absPath of [...authoritativeMetaDeletes]) {
+            const current = await this.filePolicy.classifyFile(absPath);
+            if (current.status === "missing" || current.status === "excluded") {
+              continue;
+            }
+            authoritativeMetaDeletes.delete(absPath);
+            completed.delete(absPath);
+            batch.set(absPath, "change");
+            requeuePath(absPath, "change", current.status === "error");
+          }
+          return deletes.filter(
+            (absPath) =>
+              !pureDeleteCandidates.has(absPath) ||
+              authoritativeMetaDeletes.has(absPath),
+          );
+        },
       );
-      if (deletesToApply.length > 0) {
-        if (newIds.length > 0) {
-          await this.vectorDb.deletePathsExcludingIds(deletesToApply, newIds);
-        } else {
-          await this.vectorDb.deletePaths(deletesToApply);
-        }
-      }
 
       // Update MetaCache
       for (const [p, entry] of metaUpdates) {

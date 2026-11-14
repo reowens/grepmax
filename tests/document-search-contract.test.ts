@@ -246,10 +246,22 @@ describe("existing daemon document reads", () => {
     expect(table.limit).toHaveBeenCalledWith(50);
     expect(table.select).toHaveBeenCalledWith([
       "path",
-      "hash",
       "start_line",
       "end_line",
       "_distance",
+    ]);
+  });
+  it("reports the file's current hash for a row kept from an earlier revision", async () => {
+    const current = "b".repeat(64);
+    deps.meta = () => ({
+      hash: current,
+      mtimeMs: 1,
+      size: 1,
+      hashVersion: 1,
+      hasVectors: true,
+    });
+    expect((await call()).matches).toEqual([
+      expect.objectContaining({ hash: current, hashAlgorithm: "sha256-bytes" }),
     ]);
   });
   it("status reports actual metadata coverage without query/store/model setup", async () => {
@@ -399,7 +411,7 @@ describe("existing daemon document reads", () => {
     });
     expect(await call()).toEqual({ ok: false, state: "search_unavailable" });
   });
-  it("drops outside/malformed rows without refill and strips legacy or inconsistent hashes", async () => {
+  it("drops outside/malformed rows without refill and strips legacy hashes", async () => {
     rows = [
       ...rows,
       {
@@ -418,14 +430,6 @@ describe("existing daemon document reads", () => {
       hasVectors: true,
     });
     expect(await call()).toMatchObject({ matches: [{ path: file }] });
-    expect(JSON.stringify(await call())).not.toContain("hashAlgorithm");
-    deps.meta = () => ({
-      hash: "b".repeat(64),
-      mtimeMs: 1,
-      size: 1,
-      hashVersion: 1,
-      hasVectors: true,
-    });
     expect(JSON.stringify(await call())).not.toContain("hashAlgorithm");
     rows = Array(70).fill(rows[0]);
     expect((await call()).matches).toHaveLength(50);
