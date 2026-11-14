@@ -25,9 +25,11 @@ returned. Runlist has no gmax, model or SDK runtime dependency.
   `{path,startLine,endLine,score,hash?,hashAlgorithm?}`. Ranges are one-based full
   source ranges, converted from indexed zero-based lines. Score is
   `1/(1+max(0,cosineDistance))`, not a relevance probability.
-- `hashAlgorithm: sha256-bytes` is declared only when the vector row digest agrees
-  with current version-1 metadata whose digest hashes the exact indexed bytes.
-  Legacy/mismatched provenance retains document-only pointers. Consumers must
+- `hash` is the file's digest from current version-1 metadata, which hashes the
+  exact indexed bytes, and `hashAlgorithm: sha256-bytes` is declared only then. A
+  row kept across edits equals the current revision's row but carries the digest
+  it was written at, so the row's own digest is not compared.
+  Legacy provenance retains document-only pointers. Consumers must
   reread and authorize current source, verify the digest and map body lines before
   jumping to a section. This bridge never hashes new bytes to bless old lines.
 
