@@ -2,19 +2,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
-import { v4 as uuidv4 } from "uuid";
 import { PATHS } from "../../config";
-import {
-  buildAnchorChunk,
-  type ChunkWithContext,
-  formatChunkText,
-  TreeSitterChunker,
-} from "../index/chunker";
+import { type ChunkWithContext, TreeSitterChunker } from "../index/chunker";
 import {
   type EmbeddingGenerationConfig,
   isOnnxFallbackCompatible,
 } from "../index/embedding-generation";
 import { embeddingReuseKey } from "../index/embedding-reuse";
+import { chunkSource, prepareChunks } from "../index/prepared-chunks";
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import { daemonStartDeniedReason } from "../utils/autostart";
@@ -225,35 +220,7 @@ export class WorkerOrchestrator {
     content: string,
   ): Promise<ChunkWithContext[]> {
     await this.ensureReady();
-    const { chunks: parsedChunks, metadata } = await this.chunker.chunk(
-      pathname,
-      content,
-    );
-
-    const anchorChunk = buildAnchorChunk(pathname, content, metadata);
-    const baseChunks = anchorChunk
-      ? [anchorChunk, ...parsedChunks]
-      : parsedChunks;
-
-    return baseChunks.map((chunk, idx) => {
-      const chunkWithContext = chunk as ChunkWithContext;
-      return {
-        ...chunkWithContext,
-        context: Array.isArray(chunkWithContext.context)
-          ? chunkWithContext.context
-          : [],
-        chunkIndex:
-          typeof chunkWithContext.chunkIndex === "number"
-            ? chunkWithContext.chunkIndex
-            : anchorChunk
-              ? idx - 1
-              : idx,
-        isAnchor:
-          chunkWithContext.isAnchor === true ||
-          (anchorChunk ? idx === 0 : false),
-        imports: metadata.imports,
-      };
-    });
+    return chunkSource(this.chunker, pathname, content);
   }
 
   private toPreparedChunks(
@@ -262,41 +229,7 @@ export class WorkerOrchestrator {
     chunks: ChunkWithContext[],
     skeleton?: string,
   ): PreparedChunk[] {
-    const texts = chunks.map((chunk) => formatChunkText(chunk, path));
-    const prepared: PreparedChunk[] = [];
-
-    for (let i = 0; i < texts.length; i++) {
-      const chunk = chunks[i];
-      const { content, displayText } = texts[i];
-      const prev = texts[i - 1]?.displayText;
-      const next = texts[i + 1]?.displayText;
-
-      prepared.push({
-        id: uuidv4(),
-        path,
-        hash,
-        content: content, // Now minimal
-        display_text: displayText, // Now rich
-        context_prev: typeof prev === "string" ? prev : undefined,
-        context_next: typeof next === "string" ? next : undefined,
-        start_line: chunk.startLine,
-        end_line: chunk.endLine,
-        chunk_index: chunk.chunkIndex,
-        is_anchor: chunk.isAnchor === true,
-        chunk_type: typeof chunk.type === "string" ? chunk.type : undefined,
-        complexity: chunk.complexity,
-        is_exported: chunk.isExported,
-        defined_symbols: chunk.definedSymbols,
-        referenced_symbols: chunk.referencedSymbols,
-        type_referenced_symbols: chunk.typeReferencedSymbols,
-        member_referenced_symbols: chunk.memberReferencedSymbols,
-        role: chunk.role,
-        parent_symbol: chunk.parentSymbol,
-        file_skeleton: chunk.isAnchor ? skeleton : undefined,
-      });
-    }
-
-    return prepared;
+    return prepareChunks(path, hash, chunks, skeleton);
   }
 
   async processFile(
