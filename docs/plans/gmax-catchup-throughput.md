@@ -381,10 +381,14 @@ The host runs gmax as `gmax.service` from its own unit script at 400% (`KillMode
 | 2026-11-09 02:24 | `b057713` | power-loss torn-store rollback (`gmax doctor --torn-store`) |
 | 2026-11-09 11:17 | 0.26.111 from npm | first npm install |
 | 2026-11-09 15:04 | 0.26.112 from npm | Lance 14.0.2 maintenance helper (`6023312`), every bounded operation completes |
-| 2026-11-10 00:31 | 0.26.113 from npm | current |
+| 2026-11-10 00:31 | 0.26.113 from npm | maintenance pauses the batch processor instead of detaching watchers; refused attempts back off |
+| 2026-11-13 | 0.26.114 from npm | index segments that name drained fragments merge ([Compaction](#compaction-q7), step 5 item 9) |
+| 2026-11-13 | 0.26.115 from npm | row relocation merges small fragments (item 10) |
+| 2026-11-13 06:58 | 0.26.116 from npm | an index at the segment bound merges first (item 11) |
+| 2026-11-14 23:01 | 0.26.117 from npm | an edit keeps the stored rows it did not change (item 12); current |
 
 Fixed on Linux on 2026-10-26: a read-only `gmax watch --daemon -b` started a second daemon beside a busy one (`e7133fc`); a full-text index built while the daemon ran stayed unseen until a restart (`e899041`); a unit-run daemon's recycle spawned a successor outside its cgroup (`dfe82e1`); version cleanup aborted on Lance's default thread pools and its retries cancelled live batches (`da793ae`).
 
 The power-loss repair has run once for real: after the P3 stopped uncleanly at about 11:32 UTC on 2026-11-10, the daemon's start rolled the store back from torn version 13440 to whole version 13435 and moved 15 empty or unreadable files to `~/.gmax/quarantine-torn-store-20261110-033420`; `gmax doctor --torn-store` then read the store whole with 0 files to reindex.
 
-Open on the P3: row relocation completing on deleted rows from edits, which the regrowth record shows ([Compaction](#compaction-q7), step 5); the second regrowth record runs to 2026-11-11 16:00 UTC.
+Open on the P3: rows kept and written per file over a day of edits on 0.26.117 ([Compaction](#compaction-q7), step 5 item 12). Row relocation and the index merge complete on the live store since 0.26.116.
