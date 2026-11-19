@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-11-05T17:30:00Z
-updated: 2026-11-09T14:32:04Z
+updated: 2026-11-18
 surfaces:
   - daemon
   - watcher
@@ -27,9 +27,9 @@ related_plans:
   - docs/plans/gmax-watcher-correctness.md
   - docs/plans/gmax-archived-doc-ranking.md
 current_state: >
-  The P3 and the Pro run gmax 0.26.116 (installed 2026-11-13 06:58 UTC). Index segments that name drained fragments merge, an index at the segment bound merges first, and row relocation merges up to 64 small fragments into 1 (compaction step 5, items 9 to 11). On the live store bounded maintenance ran 38 h with 0 refusals while fragments fell from 3,735 to 1,356 and deleted rows from 282,464 to 34,281 under 1,336 file edits (item 12). Since 0.26.117 an edit keeps the stored rows it did not change: 63% of rows in the first 7 min (item 12).
+  The P3 runs 0.26.117. The P3 and the Pro installed 0.26.116 on 2026-11-13 at 06:58 UTC. Index segments that name drained fragments merge, an index at the segment bound merges first, and row relocation merges up to 64 small fragments into 1 (compaction step 5, items 9 to 11). On the live store bounded maintenance ran 38 h with 0 refusals while fragments fell from 3,735 to 1,356 and deleted rows from 282,464 to 34,281 under 1,336 file edits (item 12). Since 0.26.117 an edit keeps the stored rows it did not change: 52.9% of rows across 24 h of platform edits on the P3 (item 12).
 next_step: >
-  Owner answers Q2 and Q9. Read rows kept and written per file from the journal over a day of edits (compaction step 5, item 12).
+  Owner answers Q2 and Q9.
 summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs; Q1 sets the CPU and search trade-off."
 ---
 
@@ -336,7 +336,27 @@ Measured read-only on 2026-11-07 (`table.stats()` on `chunks`): 33.4 GB, 668,702
      - **Slow relocations do the same work as fast ones** (median 55.2 MB read and 538 rows verified against 52.0 MB and 512) and come in runs, so the cause is outside the helper; what was busy is not read.
      - **An edit keeps the stored rows it did not change (0.26.117, `1c34d404`).** Every edit rewrote all of a file's rows because each prepare gave each chunk a new `id` and each row carries the file's `hash`. A new row equal to a stored row in every column but `id` and `hash`, whose embedding the worker reused, is no longer inserted and its stored id joins the delete exclusion (`src/lib/index/kept-rows.ts`); the schema is unchanged and the row's `hash` means the file's hash when the row was written. Document search reports the file's hash from MetaCache (`src/lib/daemon/document-search-handler.ts`). The full sync reads no stored rows and keeps none.
      - **Replay of 200 real edits** (`scripts/replay-row-keep.ts`): 4,224 of 7,824 rows kept (54.0%); 5,728 (73.2%) if line position and neighbour text were ignored. Kept by type: `.md` 73.6%, `.swift` 26.8%, `.ts` 15.1%, `.tsx` 2.6%; the median file keeps 0 of 18 rows.
-     - **Live, the first 7 min after the install (2026-11-14 23:01 UTC):** 98 files, 5,101 rows, 3,194 kept (63%), 1,907 written, 0 errors. 2 edited files read back from the store hold 1 row per chunk with distinct ids and end at the file's last line. Checked: `pnpm typecheck`, `pnpm run test:typecheck`, vitest 161 of 161 on the 7 changed test files; the full suite was not run. A day of edits is not read yet.
+     - **Live, the first 7 min after the install (2026-11-14 23:01 UTC):** 98 files, 5,101 rows, 3,194 kept (63%), 1,907 written, 0 errors. 2 edited files read back from the store hold 1 row per chunk with distinct ids and end at the file's last line. Checked: `pnpm typecheck`, `pnpm run test:typecheck`, vitest 161 of 161 on the 7 changed test files; the full suite was not run.
+     - **Live, 24 h on 0.26.117.** From November 17 at 09:38:51 PST through the second before November 18 at 09:38:51 PST, the P3 service journal recorded 6,498 `[watch:platform] Embedded` events. Each event counts one processing of a file. Across 389,439 chunk rows, the daemon kept 205,939 (52.9%) and wrote 183,500. Markdown and Swift together accounted for 67.8% of writes.
+
+       | File type | File events | Rows kept | Rows written |
+       |---|---:|---:|---:|
+       | Markdown | 2,088 | 130,187 | 70,021 |
+       | Swift | 2,091 | 33,231 | 54,480 |
+       | TypeScript (`.ts`) | 979 | 20,888 | 25,625 |
+       | Python | 335 | 6,751 | 12,745 |
+       | JavaScript modules (`.mjs`) | 321 | 8,555 | 11,773 |
+       | Other extensions | 684 | 6,327 | 8,856 |
+
+       The journal records basenames, so names shared by multiple paths are grouped. The five names with the most writes accounted for 28,965 rows (15.8%).
+
+       | Logged basename | File events | Rows kept | Rows written |
+       |---|---:|---:|---:|
+       | `shared-enrolled-approvals.md` | 52 | 9,754 | 8,335 |
+       | `kinetic-rider-pricing.md` | 101 | 14,949 | 6,385 |
+       | `p3-session-host.md` | 47 | 10,191 | 6,169 |
+       | `compute-3u-mount.md` | 47 | 6,027 | 4,206 |
+       | `enums.ts` | 4 | 5,460 | 3,870 |
 
 - **The daemon's cost of each bounded attempt (`67db457` and `632a443`, installed in 0.26.113).** The host's session measured, read-only on the P3: the daemon unwatched and re-watched the host's tree 30 to 47 times an hour, each 33 to 35 s from `Unwatched` to `Watching` and followed by a catch-up walk, and in 1 minute a watched batch was refused 6,437 times with `OperationBusyError`. The unit journal from 12:00 to 15:00 UTC the same day had an `Unwatched` line nearly every minute and 0 `Batch processing failed` lines, so the busy spin is intermittent: it needs a batch to start while an exclusive operation is pending.
   1. **Pause, not detach (`67db457`).** `performBoundedMaintenance` (`src/lib/daemon/daemon.ts`) called `quiesceAll` on every attempt, including the ones the helper then refused, and restored watchers with `resumeAll` and `catchupAll`. It now calls `pauseAll` and `resumePaused`, as version cleanup does: native events keep queuing in each processor, the paused processor is the no-concurrent-writer guarantee (`ProjectBatchProcessor.pause()` awaits its active batch), and only roots whose catch-up was interrupted are scanned again. A service paused during the attempt still detaches its watchers. `pause()` aborts an in-flight batch and requeues its files, so each attempt can still throw away a batch's embedding work.
@@ -391,4 +411,27 @@ Fixed on Linux on 2026-10-26: a read-only `gmax watch --daemon -b` started a sec
 
 The power-loss repair has run once for real: after the P3 stopped uncleanly at about 11:32 UTC on 2026-11-10, the daemon's start rolled the store back from torn version 13440 to whole version 13435 and moved 15 empty or unreadable files to `~/.gmax/quarantine-torn-store-20261110-033420`; `gmax doctor --torn-store` then read the store whole with 0 files to reindex.
 
-Open on the P3: rows kept and written per file over a day of edits on 0.26.117 ([Compaction](#compaction-q7), step 5 item 12). Row relocation and the index merge complete on the live store since 0.26.116.
+The 24 h row-retention observation on 0.26.117 is complete ([Compaction](#compaction-q7), step 5 item 12). Row relocation and the index merge complete on the live store since 0.26.116.
+
+
+### P3 platform watcher recovery, November 18, 2026
+
+On Linux a newly discovered directory is walked for existing files. If it already contains a traversable subdirectory, the native watch may miss later edits inside it. Gmax reports degraded coverage and coalesces requests for five minutes before starting a full re-subscription. It detaches the old subscription before the crawl, clears the new-folder flag on successful attachment, then requests catch-up. A vanished child during the crawl gets retries after 2, 4 and 8 seconds. Exhausting those retries enters watcher recovery. See `src/lib/index/watcher-core.ts` and `src/lib/daemon/watcher-manager.ts`.
+
+The P3 journal recorded the following times in PST:
+
+- At 08:38:39 the daemon started re-subscribing. At 08:43:13 a child directory vanished during attachment and the daemon scheduled a retry after two seconds. At 08:49:11 catch-up reported seven changed files and two deletions. The 10 min 32 s spans re-subscription through catch-up reporting. The journal does not timestamp the successful attachment separately.
+- At 09:37:20 another re-subscription began. At about 09:40, status still reported degraded coverage with zero queued or failed files. At 09:45:12 catch-up reported four changed files and one deletion. At 09:53 status showed native coverage, a completed scan, zero pending files and zero failures.
+
+The later native status confirms recovery. An empty processor queue during a crawl covers only events already discovered. On this tree, indexing edits discovered by catch-up can lag beyond the five-minute scheduling delay.
+
+## P3 performance batch, November 18, 2026
+
+Four changes are ready for native helper qualification and release assembly:
+
+- Metadata reconciliation uses LMDB key-only scans, including slash-bounded project prefix lookups.
+- Workers parse eligible source files once for chunk and skeleton extraction. Standalone parsing and fallback handling remain available.
+- Remote file preparation initializes the parsing dependencies on a cold worker. A subsequent local embedding request loads ColBERT on demand.
+- The bounded maintenance planner prefers a merge group whose largest source is at most twice the size of its smallest. At the hard segment limit it can select a skewed pair within the existing byte, count and proof bounds.
+
+Focused verification passed locally on November 18. Both TypeScript checks passed. Vitest passed 26 cases across four files, covering LMDB range boundaries, shared parse output and tree disposal, worker embedding readiness and Gemma worker behavior. The Rust library test target compiled with 28 warnings and all three selected merge-planner cases passed. Production CPU savings and physical bytes written still need measurement.

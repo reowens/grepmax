@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TreeSitterChunker } from "../src/lib/index/chunker";
+import {
+  chunkSource,
+  chunkSourceWithSkeleton,
+} from "../src/lib/index/prepared-chunks";
 import { Skeletonizer } from "../src/lib/skeleton/skeletonizer";
 
 interface TreeCounts {
@@ -167,5 +171,67 @@ describe("Skeletonizer tree lifecycle", () => {
 
     expect(result.success).toBe(false);
     expect(counts).toEqual({ parseCalls: 1, trees: 0, deletes: 0 });
+  });
+});
+
+describe("worker chunk and skeleton preparation", () => {
+  const file = "/tmp/combined.ts";
+  const source = "export function greet() { return 'hello'; }";
+
+  it("produces the standalone results with one parse and one deletion", async () => {
+    const chunker = new TreeSitterChunker();
+    const skeletonizer = new Skeletonizer();
+    const chunks = await chunkSource(chunker, file, source);
+    const skeletonResult = await skeletonizer.skeletonizeFile(file, source);
+    expect(skeletonResult.success).toBe(true);
+    const chunkCounts = instrumentParser(chunker as any);
+    const skeletonCounts = instrumentParser(skeletonizer as any);
+
+    const result = await chunkSourceWithSkeleton(
+      chunker,
+      skeletonizer,
+      file,
+      source,
+    );
+
+    expect(result).toEqual({ chunks, skeletonResult });
+    expect(chunkCounts).toEqual({ parseCalls: 1, trees: 1, deletes: 1 });
+    expect(skeletonCounts.parseCalls).toBe(0);
+  });
+
+  it("lets skeletonization parse independently when chunking falls back", async () => {
+    const chunker = new TreeSitterChunker();
+    const skeletonizer = new Skeletonizer();
+    await chunker.init();
+    await skeletonizer.init();
+    const chunkCounts = instrumentParser(chunker as any, "null");
+    const skeletonCounts = instrumentParser(skeletonizer as any);
+
+    const result = await chunkSourceWithSkeleton(
+      chunker,
+      skeletonizer,
+      file,
+      source,
+    );
+
+    expect(result.chunks.length).toBeGreaterThan(0);
+    expect(result.skeletonResult.success).toBe(true);
+    expect(chunkCounts).toEqual({ parseCalls: 1, trees: 0, deletes: 0 });
+    expect(skeletonCounts).toEqual({ parseCalls: 1, trees: 1, deletes: 1 });
+  });
+
+  it("releases the borrowed tree even if the second consumer rejects", async () => {
+    const chunker = new TreeSitterChunker();
+    await chunker.init();
+    const counts = instrumentParser(chunker as any);
+    const skeletonizer = new Skeletonizer();
+    vi.spyOn(skeletonizer, "skeletonizeFile").mockRejectedValue(
+      new Error("failed"),
+    );
+
+    await expect(
+      chunkSourceWithSkeleton(chunker, skeletonizer, file, source),
+    ).rejects.toThrow("failed");
+    expect(counts).toEqual({ parseCalls: 1, trees: 1, deletes: 1 });
   });
 });

@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { resolveEmbeddingGeneration } from "../src/lib/index/embedding-generation";
 
 const mocks = vi.hoisted(() => ({
@@ -6,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   mlxExisting: vi.fn(),
   mlxReady: true,
   graniteReady: true,
+  colbertReady: true,
+  colbertLoad: vi.fn(),
   quarantine: null as string | null,
   graniteRunBatch: vi.fn(),
 }));
@@ -30,8 +35,9 @@ vi.mock("../src/lib/workers/embeddings/granite", () => ({
 
 vi.mock("../src/lib/workers/embeddings/colbert", () => ({
   ColbertModel: class {
+    load = mocks.colbertLoad;
     isReady() {
-      return true;
+      return mocks.colbertReady;
     }
 
     async runBatch(_texts: string[], dense: Float32Array[]) {
@@ -53,10 +59,55 @@ describe("WorkerOrchestrator dense backend selection", () => {
     mocks.quarantine = null;
     mocks.mlxReady = true;
     mocks.graniteReady = true;
+    mocks.colbertReady = true;
+    mocks.colbertLoad.mockReset().mockImplementation(async () => {
+      mocks.colbertReady = true;
+    });
     mocks.graniteRunBatch.mockReset();
     mocks.graniteRunBatch.mockImplementation(async (texts: string[]) =>
       texts.map(() => new Float32Array(384)),
     );
+  });
+
+  it("prepares remote chunks on a cold worker, then loads ColBERT for local embedding", async () => {
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "gmax-remote-readiness-")),
+    );
+    onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+    const file = path.join(root, "route.json");
+    fs.writeFileSync(file, '{"route":"remote"}');
+    const worker = new WorkerOrchestrator(
+      resolveEmbeddingGeneration({ modelTier: "small" }),
+      "cpu",
+    );
+    mocks.colbertReady = false;
+    mocks.mlxEmbed.mockResolvedValue(null);
+    const chunkerInit = vi
+      .spyOn(worker["chunker"], "init")
+      .mockResolvedValue(undefined);
+    const skeletonInit = vi
+      .spyOn(worker["skeletonizer"], "init")
+      .mockResolvedValue(undefined);
+
+    const input = { projectRoot: root, path: file };
+    const remote = await worker.processFile({ ...input, remoteEmbedding: true });
+    expect(chunkerInit).toHaveBeenCalled();
+    expect(skeletonInit).toHaveBeenCalled();
+    expect(mocks.colbertLoad).not.toHaveBeenCalled();
+    expect(mocks.graniteRunBatch).not.toHaveBeenCalled();
+    expect(mocks.mlxEmbed).not.toHaveBeenCalled();
+    expect(remote.remoteChunks?.length).toBeGreaterThan(0);
+    expect(remote.remoteChunks).toEqual(
+      remote.vectors.map(({ content }, index) => ({ index, text: content })),
+    );
+
+    const local = await worker.processFile(input);
+    expect(mocks.colbertLoad).toHaveBeenCalledTimes(1);
+    expect(mocks.graniteRunBatch).toHaveBeenCalled();
+    expect(local.vectors.map(({ content }) => content)).toEqual(
+      remote.vectors.map(({ content }) => content),
+    );
+    expect(local.vectors[0].vector).toHaveLength(384);
   });
 
   it("does not fall back to fixed ONNX for a custom MLX generation", async () => {

@@ -125,6 +125,13 @@ interface TreeSitterTree {
   delete(): void;
 }
 
+/** The caller that obtains a parse owns its tree until both traversals finish. */
+export interface ChunkParse {
+  tree: TreeSitterTree;
+  grammarName: string;
+  definitionTypes: string[];
+}
+
 // TreeSitter Parser and Language types
 interface TreeSitterParser {
   init(options: { locator: string }): Promise<void>;
@@ -298,8 +305,15 @@ export class TreeSitterChunker {
     }
   }
 
-  async chunk(filePath: string, content: string): Promise<ChunkingResult> {
-    if (!this.initialized) await this.init();
+  async chunk(
+    filePath: string,
+    content: string,
+    borrowed?: ChunkParse | null,
+  ): Promise<ChunkingResult> {
+    const parsed =
+      borrowed === undefined
+        ? await this.parseForChunking(filePath, content)
+        : borrowed;
 
     const docLike = isDocLikeFile(filePath);
     let result: ChunkingResult = {
@@ -307,11 +321,19 @@ export class TreeSitterChunker {
       metadata: { imports: [], exports: [], comments: [] },
     };
 
-    if (this.parser) {
+    if (parsed) {
       try {
-        result = await this.chunkWithTreeSitter(filePath, content);
+        result = this.buildChunksFromTree(
+          filePath,
+          content,
+          parsed.definitionTypes,
+          parsed.grammarName,
+          parsed.tree.rootNode,
+        );
       } catch {
         result.chunks = [];
+      } finally {
+        if (borrowed === undefined) parsed.tree.delete();
       }
     }
 
@@ -397,53 +419,30 @@ export class TreeSitterChunker {
     return result;
   }
 
-  private async chunkWithTreeSitter(
+  /** Returns the owned tree, or null when this input needs fallback chunking. */
+  async parseForChunking(
     filePath: string,
     content: string,
-  ): Promise<ChunkingResult> {
+  ): Promise<ChunkParse | null> {
+    if (!this.initialized) await this.init();
     const ext = path.extname(filePath);
-    if (ext === ".json") {
-      return {
-        chunks: [],
-        metadata: { imports: [], exports: [], comments: [] },
-      };
-    }
+    if (!this.parser || ext === ".json") return null;
 
-    const langDef = getLanguageByExtension(ext);
-    const lang = langDef?.grammar?.name || "";
-    if (!lang)
-      return {
-        chunks: [],
-        metadata: { imports: [], exports: [], comments: [] },
-      };
-
-    const language = await this.getLanguage(lang);
-    if (!language || !this.parser)
-      return {
-        chunks: [],
-        metadata: { imports: [], exports: [], comments: [] },
-      };
-
-    this.parser.setLanguage(language);
-    const tree = this.parser.parse(content);
-    if (!tree) {
-      return {
-        chunks: [],
-        metadata: { imports: [], exports: [], comments: [] },
-      };
-    }
-
+    const language = getLanguageByExtension(ext);
+    if (!language?.grammar) return null;
     try {
-      return this.buildChunksFromTree(
-        filePath,
-        content,
-        langDef?.definitionTypes || [],
-        lang,
-        tree.rootNode,
-      );
-    } finally {
-      // Nothing in the guarded block may retain a Node.
-      tree.delete();
+      const grammar = await this.getLanguage(language.grammar.name);
+      if (!grammar) return null;
+      this.parser.setLanguage(grammar);
+      const tree = this.parser.parse(content);
+      if (!tree) return null;
+      return {
+        tree,
+        definitionTypes: language.definitionTypes ?? [],
+        grammarName: language.grammar.name,
+      };
+    } catch {
+      return null;
     }
   }
 

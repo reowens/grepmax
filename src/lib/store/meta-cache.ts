@@ -66,7 +66,7 @@ export class MetaCache {
 
   async getAllKeys(): Promise<Set<string>> {
     const keys = new Set<string>();
-    for await (const { key } of this.db.getRange()) {
+    for await (const key of this.db.getKeys()) {
       keys.add(String(key));
     }
     return keys;
@@ -74,7 +74,7 @@ export class MetaCache {
 
   async getKeysWithPrefix(prefix: string): Promise<Set<string>> {
     const keys = new Set<string>();
-    for await (const { key } of this.db.getRange({ start: prefix })) {
+    for await (const key of this.db.getKeys({ start: prefix })) {
       const k = String(key);
       if (!k.startsWith(prefix)) break;
       keys.add(k);

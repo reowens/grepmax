@@ -1,5 +1,7 @@
 # Docs
 
+The [P3 performance batch](plans/gmax-catchup-throughput.md#p3-performance-batch-november-18-2026) records the four changes and their focused verification.
+
 ## Current stopping point: remote embedding
 
 Start at [Delivery](plans/gmax-delivery.md#remote-embedding-stopping-point) and

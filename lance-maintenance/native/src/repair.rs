@@ -18,6 +18,65 @@ use std::{
 pub(crate) const SOURCE: u64 = 8 * 1024 * 1024;
 const MERGE_SOURCE: u64 = 128 * 1024 * 1024;
 pub(crate) const SEGMENTS: usize = 64;
+const MERGE_FRAGMENTS: usize = 4096;
+
+struct MergeSource {
+    bytes: u64,
+    id: String,
+    live_fragments: Vec<u64>,
+}
+
+fn select_segments(
+    sources: &mut [MergeSource],
+    at_segment_bound: bool,
+) -> Option<(Vec<String>, Vec<u64>)> {
+    sources.sort_unstable_by(|a, b| (a.bytes, &a.id).cmp(&(b.bytes, &b.id)));
+    // Start at the smallest source that has a suitable partner. Within a
+    // group the largest input may be at most twice the size of the smallest.
+    // At the limit a second pass lifts only that ratio to free a segment slot.
+    for comparable in [true, false] {
+        if !comparable && !at_segment_bound {
+            break;
+        }
+        for (start, first) in sources.iter().enumerate() {
+            let mut bytes = first.bytes;
+            let mut picked = vec![first.id.clone()];
+            let mut fragments: BTreeSet<_> = first.live_fragments.iter().copied().collect();
+            for next in &sources[start + 1..] {
+                if bytes + next.bytes > MERGE_SOURCE
+                    || (comparable && next.bytes > 2 * first.bytes)
+                {
+                    break;
+                }
+                // A merge needs a nonempty proof of current coverage. Skip
+                // all-drained pairs and try later partners for this source.
+                if fragments.is_empty() && next.live_fragments.is_empty() {
+                    continue;
+                }
+                if fragments.len() + next.live_fragments.len() > MERGE_FRAGMENTS {
+                    let added = next
+                        .live_fragments
+                        .iter()
+                        .filter(|id| !fragments.contains(*id))
+                        .count();
+                    if fragments.len() + added > MERGE_FRAGMENTS {
+                        continue;
+                    }
+                }
+                bytes += next.bytes;
+                picked.push(next.id.clone());
+                fragments.extend(next.live_fragments.iter().copied());
+                if picked.len() == 8 {
+                    break;
+                }
+            }
+            if picked.len() >= 2 {
+                return Some((picked, fragments.into_iter().collect()));
+            }
+        }
+    }
+    None
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -53,7 +112,8 @@ impl Proof {
                 && relocation.valid(&self.fragments);
         }
         !self.fragments.is_empty()
-            && self.fragments.len() <= if self.merge.is_empty() { 64 } else { 4096 }
+            && self.fragments.len()
+                <= if self.merge.is_empty() { 64 } else { MERGE_FRAGMENTS }
             && self.fragments.iter().all(|id| *id <= u32::MAX as u64)
             && matches!(self.field.as_str(), "path" | "content")
             && !self.name.is_empty()
@@ -220,8 +280,9 @@ pub async fn plan(
                 .map(|f| f.id as u32)
                 .collect();
             let mut eligible = vec![];
+            let at_segment_bound = indices.len() >= SEGMENTS;
             for index in indices.drain(..) {
-                if index.fragment_bitmap.is_some() {
+                if let Some(coverage) = &index.fragment_bitmap {
                     // The pinned FTS merger finalizes legacy partition layouts
                     // in-place. Such inputs are not immutable bounded merge
                     // sources; keep them intact and build a new segment instead.
@@ -236,37 +297,28 @@ pub async fn plan(
                     }
                     let size = bytes(root, &index)?;
                     if size <= MERGE_SOURCE {
-                        eligible.push((size, index));
+                        let live_fragments: Vec<_> = coverage
+                            .iter()
+                            .filter(|id| current.contains(id))
+                            .map(u64::from)
+                            .take(MERGE_FRAGMENTS + 1)
+                            .collect();
+                        if live_fragments.len() <= MERGE_FRAGMENTS {
+                            eligible.push(MergeSource {
+                                bytes: size,
+                                id: index.uuid.to_string(),
+                                live_fragments,
+                            });
+                        }
                     }
                 }
             }
-            eligible.sort_by_key(|(size, _)| *size);
-            let mut picked = vec![];
-            let mut size = 0;
-            for (n, index) in eligible {
-                if size + n > MERGE_SOURCE {
-                    break;
-                }
-                size += n;
-                picked.push(index);
-                if picked.len() == 8 {
-                    break;
-                }
-            }
-            if picked.len() >= 2 {
-                let fragments = picked
-                    .iter()
-                    .flat_map(|i| i.fragment_bitmap.as_ref().unwrap().iter())
-                    .filter(|id| current.contains(id))
-                    .map(u64::from)
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
+            if let Some((merge, fragments)) = select_segments(&mut eligible, at_segment_bound) {
                 return Ok(Some(Proof {
                     fragments,
                     name,
                     field,
-                    merge: picked.iter().map(|i| i.uuid.to_string()).collect(),
+                    merge,
                     output: None,
                     relocation: None,
                     orphans: None,
@@ -566,4 +618,53 @@ pub async fn backlog(dataset: &Dataset) -> Result<(usize, usize)> {
         }
     }
     Ok((fragments.len(), rows))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(id: u64, bytes: u64) -> MergeSource {
+        MergeSource {
+            bytes,
+            id: id.to_string(),
+            live_fragments: vec![id],
+        }
+    }
+
+    #[test]
+    fn small_arrivals_merge_without_absorbing_the_previous_large_output() {
+        let mut sources = vec![source(1, 96 << 20), source(2, 1 << 20)];
+        assert!(select_segments(&mut sources, false).is_none());
+        sources.push(source(3, 1 << 20));
+        let (ids, fragments) = select_segments(&mut sources, false).unwrap();
+        assert_eq!(ids, ["2", "3"]);
+        assert_eq!(fragments, [2, 3]);
+        // Simulate another wave after committing the small pair.
+        let mut sources = vec![source(4, 2 << 20), source(1, 96 << 20), source(5, 1 << 20)];
+        assert_eq!(select_segments(&mut sources, false).unwrap().0, ["5", "4"]);
+    }
+
+    #[test]
+    fn segment_bound_prefers_a_comparable_pair_but_permits_a_skewed_pair() {
+        let mut sources = [source(1, 1 << 20), source(3, 32 << 20), source(2, 32 << 20)];
+        assert_eq!(select_segments(&mut sources, true).unwrap().0, ["2", "3"]);
+        let mut sources = [source(1, 1 << 20), source(2, 127 << 20)];
+        assert!(select_segments(&mut sources, false).is_none());
+        assert_eq!(select_segments(&mut sources, true).unwrap().0, ["1", "2"]);
+    }
+
+    #[test]
+    fn segment_bound_still_requires_a_pair_within_byte_and_proof_limits() {
+        let mut oversized = [source(1, 65 << 20), source(2, 65 << 20)];
+        assert!(select_segments(&mut oversized, true).is_none());
+        let mut sources = [source(1, 1), source(2, 1), source(3, 2)];
+        sources[0].live_fragments.clear();
+        sources[1].live_fragments.clear();
+        assert!(select_segments(&mut sources[..2], true).is_none());
+        assert_eq!(select_segments(&mut sources, true).unwrap().1, [3]);
+        sources[0].live_fragments = (10..10 + MERGE_FRAGMENTS as u64).collect();
+        sources[1].live_fragments = vec![2];
+        assert_eq!(select_segments(&mut sources, true).unwrap().0, ["2", "3"]);
+    }
 }

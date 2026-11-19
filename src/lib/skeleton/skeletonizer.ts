@@ -182,6 +182,7 @@ export class Skeletonizer {
     filePath: string,
     content: string,
     options?: SkeletonOptions,
+    borrowedTree?: Pick<TreeSitterTree, "rootNode">,
   ): Promise<SkeletonResult> {
     if (!this.initialized) await this.init();
 
@@ -219,17 +220,19 @@ export class Skeletonizer {
 
     let tree: TreeSitterTree | null = null;
     try {
-      // Parse the file
-      this.parser.setLanguage(language);
-      tree = this.parser.parse(content);
-      if (!tree) {
+      if (!borrowedTree) {
+        this.parser.setLanguage(language);
+        tree = this.parser.parse(content);
+      }
+      const parsed = borrowedTree ?? tree;
+      if (!parsed) {
         return this.createFallbackResult(
           filePath,
           content,
           "Parse returned no tree",
         );
       }
-      const root = tree.rootNode;
+      const root = parsed.rootNode;
 
       // Find all regions to elide (function/method bodies)
       const elisions: ElisionRegion[] = [];

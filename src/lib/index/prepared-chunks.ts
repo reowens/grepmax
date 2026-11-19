@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
+import type { Skeletonizer } from "../skeleton";
 import type { PreparedChunk } from "../store/types";
 import {
   buildAnchorChunk,
+  type ChunkParse,
   type ChunkWithContext,
   formatChunkText,
   type TreeSitterChunker,
@@ -12,10 +14,12 @@ export async function chunkSource(
   chunker: TreeSitterChunker,
   pathname: string,
   content: string,
+  borrowed?: ChunkParse | null,
 ): Promise<ChunkWithContext[]> {
   const { chunks: parsedChunks, metadata } = await chunker.chunk(
     pathname,
     content,
+    borrowed,
   );
 
   const anchorChunk = buildAnchorChunk(pathname, content, metadata);
@@ -41,6 +45,29 @@ export async function chunkSource(
       imports: metadata.imports,
     };
   });
+}
+
+/** Both consumers use the same source and language registry. A file that
+ * could not be parsed by the chunker keeps the skeletonizer's own fallback. */
+export async function chunkSourceWithSkeleton(
+  chunker: TreeSitterChunker,
+  skeletonizer: Skeletonizer,
+  pathname: string,
+  content: string,
+) {
+  const parsed = await chunker.parseForChunking(pathname, content);
+  try {
+    const chunks = await chunkSource(chunker, pathname, content, parsed);
+    const skeletonResult = await skeletonizer.skeletonizeFile(
+      pathname,
+      content,
+      { includeSummary: true },
+      parsed?.tree,
+    );
+    return { chunks, skeletonResult };
+  } finally {
+    parsed?.tree.delete();
+  }
 }
 
 /** The rows a file's chunks become, before embedding. */

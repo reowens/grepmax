@@ -9,7 +9,10 @@ import {
   isOnnxFallbackCompatible,
 } from "../index/embedding-generation";
 import { embeddingReuseKey } from "../index/embedding-reuse";
-import { chunkSource, prepareChunks } from "../index/prepared-chunks";
+import {
+  chunkSourceWithSkeleton,
+  prepareChunks,
+} from "../index/prepared-chunks";
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import { daemonStartDeniedReason } from "../utils/autostart";
@@ -215,12 +218,13 @@ export class WorkerOrchestrator {
     return results;
   }
 
-  private async chunkFile(
-    pathname: string,
-    content: string,
-  ): Promise<ChunkWithContext[]> {
-    await this.ensureReady();
-    return chunkSource(this.chunker, pathname, content);
+  private chunkFile(pathname: string, content: string) {
+    return chunkSourceWithSkeleton(
+      this.chunker,
+      this.skeletonizer,
+      pathname,
+      content,
+    );
   }
 
   private toPreparedChunks(
@@ -276,21 +280,7 @@ export class WorkerOrchestrator {
 
     const content = buffer.toString("utf-8");
     const chunkStart = performance.now();
-    const chunksPromise = this.chunkFile(input.path, content);
-
-    // Generate skeleton in parallel
-    const skeletonPromise = this.skeletonizer.skeletonizeFile(
-      input.path,
-      content,
-      {
-        includeSummary: true,
-      },
-    );
-
-    const [chunks, skeletonResult] = await Promise.all([
-      chunksPromise,
-      skeletonPromise,
-    ]);
+    const { chunks, skeletonResult } = await this.chunkFile(input.path, content);
     dbg(
       "orch",
       `chunked ${input.path} → ${chunks.length} chunks ${(performance.now() - chunkStart).toFixed(0)}ms`,

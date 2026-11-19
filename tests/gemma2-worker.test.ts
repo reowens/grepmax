@@ -108,8 +108,10 @@ it("embeds each file title and declines content-only reuse while preserving stor
     resolveEmbeddingGeneration({ modelTier: "gemma2" }),
     "gpu",
   );
-  vi.spyOn(o as any, "chunkFile").mockResolvedValue([{}]);
-  vi.spyOn((o as any).skeletonizer, "skeletonizeFile").mockResolvedValue({});
+  vi.spyOn(o as any, "chunkFile").mockResolvedValue({
+    chunks: [{}],
+    skeletonResult: {},
+  });
   vi.spyOn(o as any, "toPreparedChunks").mockReturnValue([
     {
       id: "fixture",
