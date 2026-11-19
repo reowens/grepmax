@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-11-05T17:30:00Z
-updated: 2026-11-18
+updated: 2026-11-19T01:51:35Z
 surfaces:
   - daemon
   - watcher
@@ -27,9 +27,9 @@ related_plans:
   - docs/plans/gmax-watcher-correctness.md
   - docs/plans/gmax-archived-doc-ranking.md
 current_state: >
-  The P3 runs 0.26.117. The P3 and the Pro installed 0.26.116 on 2026-11-13 at 06:58 UTC. Index segments that name drained fragments merge, an index at the segment bound merges first, and row relocation merges up to 64 small fragments into 1 (compaction step 5, items 9 to 11). On the live store bounded maintenance ran 38 h with 0 refusals while fragments fell from 3,735 to 1,356 and deleted rows from 282,464 to 34,281 under 1,336 file edits (item 12). Since 0.26.117 an edit keeps the stored rows it did not change: 52.9% of rows across 24 h of platform edits on the P3 (item 12).
+  The P3 runs 0.26.118. The four November 18 performance changes shipped with qualified Linux x64 and Darwin arm64 helpers. Both monitored P3 projects returned search results after handover. The earlier 24-hour observation on 0.26.117 measured 52.9% row retention across platform edits (compaction step 5, item 12).
 next_step: >
-  Owner answers Q2 and Q9.
+  The 0.26.118 P3 handover is complete. Owner answers to Q2 and Q9 remain open.
 summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs; Q1 sets the CPU and search trade-off."
 ---
 
@@ -405,7 +405,8 @@ The host runs gmax as `gmax.service` from its own unit script at 400% (`KillMode
 | 2026-11-13 | 0.26.114 from npm | index segments that name drained fragments merge ([Compaction](#compaction-q7), step 5 item 9) |
 | 2026-11-13 | 0.26.115 from npm | row relocation merges small fragments (item 10) |
 | 2026-11-13 06:58 | 0.26.116 from npm | an index at the segment bound merges first (item 11) |
-| 2026-11-14 23:01 | 0.26.117 from npm | an edit keeps the stored rows it did not change (item 12); current |
+| 2026-11-14 23:01 | 0.26.117 from npm | an edit keeps the stored rows it did not change (item 12) |
+| 2026-11-19 01:50 | 0.26.118 from npm | [P3 performance batch](#p3-performance-batch-november-18-2026), current |
 
 Fixed on Linux on 2026-10-26: a read-only `gmax watch --daemon -b` started a second daemon beside a busy one (`e7133fc`); a full-text index built while the daemon ran stayed unseen until a restart (`e899041`); a unit-run daemon's recycle spawned a successor outside its cgroup (`dfe82e1`); version cleanup aborted on Lance's default thread pools and its retries cancelled live batches (`da793ae`).
 
@@ -427,7 +428,7 @@ The later native status confirms recovery. An empty processor queue during a cra
 
 ## P3 performance batch, November 18, 2026
 
-Four changes are ready for native helper qualification and release assembly:
+Four changes shipped in 0.26.118:
 
 - Metadata reconciliation uses LMDB key-only scans, including slash-bounded project prefix lookups.
 - Workers parse eligible source files once for chunk and skeleton extraction. Standalone parsing and fallback handling remain available.
@@ -435,3 +436,11 @@ Four changes are ready for native helper qualification and release assembly:
 - The bounded maintenance planner prefers a merge group whose largest source is at most twice the size of its smallest. At the hard segment limit it can select a skewed pair within the existing byte, count and proof bounds.
 
 Focused verification passed locally on November 18. Both TypeScript checks passed. Vitest passed 26 cases across four files, covering LMDB range boundaries, shared parse output and tree disposal, worker embedding readiness and Gemma worker behavior. The Rust library test target compiled with 28 warnings and all three selected merge-planner cases passed. Production CPU savings and physical bytes written still need measurement.
+
+### 0.26.118 release and P3 handover
+
+The release includes performance commit `bf53a762` at tag `v0.26.118` (`2aeb209a5e8265afad202678831f2e11a0d03167`). Linux x64 and Darwin arm64 qualified from the same native source digest, `59cc3ba1e557516016ce9e9f34fff3711591803ef255349cc84d95b17b6a9978`. Each platform passed 29 Rust tests, 30 shipping acceptance cases and five fault cases with zero skips.
+
+The release workflow succeeded and the package was published on November 19 at 01:48:23 UTC. The canonical npm tarball URL initially returned HTTP 404. A cache-busted registry request supplied an archive whose SHA-256 matched the approved release, `871941ab76cab618d019f9faa090b8fc84be5af43597777b55557e97d7dd599d`. [Publication workflow](https://github.com/reowens/grepmax/actions/runs/44438534495) · [Release](https://github.com/reowens/grepmax/releases/tag/v0.26.118)
+
+P3 installed the verified archive through the npm/systemd handover. The daemon restarted on 0.26.118 at 01:50:41 UTC. Searches returned results from both `platform` and `gmax`. Both projects reported native watcher coverage, zero pending files and zero failed files. Production CPU and write savings remain unmeasured.
